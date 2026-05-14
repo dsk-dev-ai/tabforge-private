@@ -1,3 +1,5 @@
+import "./tabstream.js";
+
 let selectedTabs = [];
 
 async function loadTabs() {
@@ -34,8 +36,7 @@ async function loadTabs() {
                     );
             }
 
-            console.log(
-                "Selected tabs:",
+            window.sendTabsToTabForge(
                 selectedTabs
             );
         };
