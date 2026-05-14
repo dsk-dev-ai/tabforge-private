@@ -4,7 +4,6 @@ const selectedTabs = new Map();
 
 async function loadTabs() {
     try {
-
         const tabs = await chrome.tabs.query({});
 
         const container =
@@ -71,19 +70,12 @@ function createTabItem(tab) {
     label.innerText =
         tab.title || "Untitled";
 
-    wrapper.appendChild(
-        checkbox
-    );
-
-    wrapper.appendChild(
-        label
-    );
+    wrapper.appendChild(checkbox);
+    wrapper.appendChild(label);
 
     document
         .getElementById("tabs")
-        .appendChild(
-            wrapper
-        );
+        .appendChild(wrapper);
 }
 
 function handleSelection(
@@ -136,11 +128,6 @@ function sendTabsToTabForge(
     );
 
     console.log(payload);
-
-    // future:
-    // websocket
-    // ipc
-    // rust backend
 }
 
 loadTabs();
