@@ -4,7 +4,12 @@ mod ipc;
 mod workers;
 mod models;
 
-use ipc::bridge::{receive_tabs, TabPayload};
+use ipc::bridge::{
+    receive_tabs,
+    TabData,
+    TabPayload
+};
+
 use models::tab::BrowserTab;
 use recorder::manager::RecorderManager;
 use recorder::session::RecordingSession;
@@ -23,27 +28,58 @@ fn greet(name: &str) -> String {
     )
 }
 
-fn create_demo_tab() -> BrowserTab {
+fn create_demo_tab(
+    id: &str,
+    title: &str,
+    url: &str
+) -> BrowserTab {
+
     BrowserTab {
-        id: "tab_001".to_string(),
-        title: "YouTube".to_string(),
-        url: "https://youtube.com".to_string(),
-        width: DEFAULT_WIDTH,
-        height: DEFAULT_HEIGHT,
-        fps: DEFAULT_FPS,
+
+        id:
+            id.to_string(),
+
+        title:
+            title.to_string(),
+
+        url:
+            url.to_string(),
+
+        width:
+            DEFAULT_WIDTH,
+
+        height:
+            DEFAULT_HEIGHT,
+
+        fps:
+            DEFAULT_FPS
     }
 }
 
-fn create_demo_session() -> RecordingSession {
+fn create_demo_session()
+-> RecordingSession {
+
     RecordingSession {
-        tab: create_demo_tab(),
+
+        tab:
+            create_demo_tab(
+                "tab_001",
+                "YouTube",
+                "https://youtube.com"
+            ),
+
         output_file:
-            "youtube_1080p.mp4".to_string(),
-        recording: false,
+            "youtube_1080p.mp4"
+            .to_string(),
+
+        recording:
+            false
     }
 }
 
-fn bootstrap_session_manager() -> RecorderManager {
+fn bootstrap_session_manager()
+-> RecorderManager {
+
     let mut manager =
         RecorderManager::new();
 
@@ -57,22 +93,74 @@ fn bootstrap_session_manager() -> RecorderManager {
 }
 
 fn bootstrap_ipc_demo() {
-    let payload = TabPayload {
 
-        selected_tabs: vec![
-            "youtube".to_string(),
-            "research".to_string(),
-            "docs".to_string(),
+    let payload =
+        TabPayload {
+
+        selected_tabs:
+
+            vec![
+
+            TabData {
+
+                id:
+                    "tab_001"
+                    .to_string(),
+
+                title:
+                    "YouTube"
+                    .to_string(),
+
+                url:
+                    "https://youtube.com"
+                    .to_string()
+            },
+
+            TabData {
+
+                id:
+                    "tab_002"
+                    .to_string(),
+
+                title:
+                    "Research"
+                    .to_string(),
+
+                url:
+                    "https://openai.com"
+                    .to_string()
+            },
+
+            TabData {
+
+                id:
+                    "tab_003"
+                    .to_string(),
+
+                title:
+                    "Docs"
+                    .to_string(),
+
+                url:
+                    "https://docs.rs"
+                    .to_string()
+            }
+
         ],
 
-        timestamp: 123456789,
+        timestamp:
+            123456789
     };
 
-    receive_tabs(payload);
+    receive_tabs(
+        payload
+    );
 }
 
 fn print_banner() {
+
     println!();
+
     println!(
         "========== {} ==========",
         APP_NAME
@@ -80,7 +168,8 @@ fn print_banner() {
 }
 
 fn print_session_info(
-    manager: &RecorderManager
+    manager:
+    &RecorderManager
 ) {
 
     print_banner();
@@ -88,16 +177,22 @@ fn print_session_info(
     for (
         index,
         session
-    ) in manager
+    )
+
+    in manager
         .sessions
         .iter()
         .enumerate()
+
     {
 
         println!(
             "[{}] {} ({})",
+
             index + 1,
+
             session.tab.title,
+
             session.tab.id
         );
 
@@ -108,37 +203,45 @@ fn print_session_info(
 
         println!(
             "Resolution: {}x{}",
+
             session.tab.width,
+
             session.tab.height
         );
 
         println!(
             "FPS: {}",
+
             session.tab.fps
         );
 
         println!(
             "Output: {}",
+
             session.output_file
         );
 
         println!(
             "Recording: {}",
+
             session.recording
         );
 
         println!(
-            "---------------------"
+            "-------------------"
         );
     }
 
     println!(
         "Active Sessions: {}",
-        manager.sessions.len()
+
+        manager
+            .sessions
+            .len()
     );
 
     println!(
-        "======================"
+        "==================="
     );
 
     println!();
@@ -176,7 +279,8 @@ pub fn run() {
     tauri::Builder::default()
 
         .plugin(
-            tauri_plugin_opener::init()
+            tauri_plugin_opener
+                ::init()
         )
 
         .invoke_handler(
@@ -186,7 +290,8 @@ pub fn run() {
         )
 
         .run(
-            tauri::generate_context!()
+            tauri
+                ::generate_context!()
         )
 
         .expect(
