@@ -1,28 +1,28 @@
 let selectedTabs = [];
 
 async function loadTabs() {
-
-    const tabs =
-        await chrome.tabs.query({});
+    const tabs = await chrome.tabs.query({});
 
     const container =
         document.getElementById("tabs");
 
-    container.innerHTML="";
+    container.innerHTML = "";
 
-    tabs.forEach(tab => {
+    tabs.forEach((tab) => {
 
         const wrapper =
             document.createElement("div");
 
+        wrapper.style.marginBottom="8px";
+
         const checkbox =
             document.createElement("input");
 
-        checkbox.type="checkbox";
+        checkbox.type = "checkbox";
 
-        checkbox.onchange=()=>{
+        checkbox.onchange = () => {
 
-            if(checkbox.checked){
+            if (checkbox.checked) {
 
                 selectedTabs.push(
                     tab.id
@@ -30,24 +30,24 @@ async function loadTabs() {
 
             } else {
 
-                selectedTabs=
-                selectedTabs.filter(
-                    id=>id!==tab.id
-                );
+                selectedTabs =
+                    selectedTabs.filter(
+                        id => id !== tab.id
+                    );
 
             }
 
             console.log(
+                "Selected:",
                 selectedTabs
             );
-
         };
 
-        const label=
+        const label =
             document.createElement("span");
 
-        label.innerText=
-            tab.title;
+        label.innerText =
+            " " + (tab.title || "Untitled");
 
         wrapper.appendChild(
             checkbox
@@ -60,9 +60,7 @@ async function loadTabs() {
         container.appendChild(
             wrapper
         );
-
     });
-
 }
 
 loadTabs();
