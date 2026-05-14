@@ -1,5 +1,3 @@
-import "./tabstream.js";
-
 let selectedTabs = [];
 
 async function loadTabs() {
@@ -36,7 +34,12 @@ async function loadTabs() {
                     );
             }
 
-            window.sendTabsToTabForge(
+            console.log(
+                "Selected tabs:",
+                selectedTabs
+            );
+
+            sendTabsToTabForge(
                 selectedTabs
             );
         };
@@ -59,6 +62,19 @@ async function loadTabs() {
             wrapper
         );
     });
+}
+
+function sendTabsToTabForge(tabIds) {
+
+    const payload = {
+        selectedTabs: tabIds,
+        timestamp: Date.now()
+    };
+
+    console.log(
+        "Sending:",
+        payload
+    );
 }
 
 loadTabs();
