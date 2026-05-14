@@ -1,80 +1,146 @@
-let selectedTabs = [];
+// TabForge - Popup Controller
+
+const selectedTabs = new Map();
 
 async function loadTabs() {
-    const tabs = await chrome.tabs.query({});
+    try {
 
-    const container =
-        document.getElementById("tabs");
+        const tabs = await chrome.tabs.query({});
 
-    container.innerHTML = "";
+        const container =
+            document.getElementById("tabs");
 
-    tabs.forEach((tab) => {
+        container.innerHTML = "";
 
-        const wrapper =
-            document.createElement("div");
-
-        wrapper.style.marginBottom = "8px";
-
-        const checkbox =
-            document.createElement("input");
-
-        checkbox.type = "checkbox";
-
-        checkbox.onchange = () => {
-
-            if (checkbox.checked) {
-
-                selectedTabs.push(tab.id);
-
-            } else {
-
-                selectedTabs =
-                    selectedTabs.filter(
-                        id => id !== tab.id
-                    );
-            }
-
-            console.log(
-                "Selected tabs:",
-                selectedTabs
-            );
-
-            sendTabsToTabForge(
-                selectedTabs
-            );
-        };
-
-        const label =
-            document.createElement("span");
-
-        label.innerText =
-            " " + (tab.title || "Untitled");
-
-        wrapper.appendChild(
-            checkbox
+        const validTabs = tabs.filter(tab =>
+            tab.id &&
+            tab.title &&
+            tab.url &&
+            !tab.url.startsWith("chrome://") &&
+            !tab.url.startsWith("edge://")
         );
 
-        wrapper.appendChild(
-            label
-        );
+        if (validTabs.length === 0) {
+            container.innerHTML =
+                "<p>No available tabs found</p>";
 
-        container.appendChild(
-            wrapper
+            return;
+        }
+
+        validTabs.forEach(createTabItem);
+
+    } catch (error) {
+
+        console.error(
+            "TabForge load error:",
+            error
         );
-    });
+    }
 }
 
-function sendTabsToTabForge(tabIds) {
+function createTabItem(tab) {
+
+    const wrapper =
+        document.createElement("div");
+
+    wrapper.style.display = "flex";
+    wrapper.style.alignItems = "center";
+    wrapper.style.padding = "6px";
+    wrapper.style.marginBottom = "8px";
+    wrapper.style.borderBottom =
+        "1px solid #ddd";
+
+    const checkbox =
+        document.createElement("input");
+
+    checkbox.type = "checkbox";
+
+    checkbox.addEventListener(
+        "change",
+        () => handleSelection(
+            checkbox,
+            tab
+        )
+    );
+
+    const label =
+        document.createElement("span");
+
+    label.style.marginLeft = "8px";
+
+    label.innerText =
+        tab.title || "Untitled";
+
+    wrapper.appendChild(
+        checkbox
+    );
+
+    wrapper.appendChild(
+        label
+    );
+
+    document
+        .getElementById("tabs")
+        .appendChild(
+            wrapper
+        );
+}
+
+function handleSelection(
+    checkbox,
+    tab
+) {
+
+    if (checkbox.checked) {
+
+        selectedTabs.set(
+            tab.id,
+            {
+                id: tab.id,
+                title: tab.title,
+                url: tab.url
+            }
+        );
+
+    } else {
+
+        selectedTabs.delete(
+            tab.id
+        );
+    }
 
     const payload = {
-        selectedTabs: tabIds,
-        timestamp: Date.now()
+        selectedTabs:
+            Array.from(
+                selectedTabs.values()
+            ),
+
+        totalSelected:
+            selectedTabs.size,
+
+        timestamp:
+            Date.now()
     };
 
-    console.log(
-        "Sending:",
+    sendTabsToTabForge(
         payload
     );
+}
+
+function sendTabsToTabForge(
+    payload
+) {
+
+    console.log(
+        "TABFORGE PAYLOAD:"
+    );
+
+    console.log(payload);
+
+    // future:
+    // websocket
+    // ipc
+    // rust backend
 }
 
 loadTabs();
