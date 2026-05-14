@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "TabForge Bridge",
+  "version": "0.1.0",
+  "description": "Bridge browser tabs into TabForge",
+
+  "permissions": [
+    "tabs",
+    "tabCapture",
+    "storage"
+  ],
+
+  "host_permissions": [
+    "<all_urls>"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
