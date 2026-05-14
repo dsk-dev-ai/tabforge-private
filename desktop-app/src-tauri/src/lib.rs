@@ -4,46 +4,96 @@ mod ipc;
 mod workers;
 mod models;
 
+use ipc::bridge::{receive_tabs, TabPayload};
 use models::tab::BrowserTab;
 use recorder::manager::RecorderManager;
 use recorder::session::RecordingSession;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+const APP_NAME: &str = "TabForge";
+const DEFAULT_WIDTH: u32 = 1920;
+const DEFAULT_HEIGHT: u32 = 1080;
+const DEFAULT_FPS: u32 = 60;
+
 #[tauri::command]
 fn greet(name: &str) -> String {
-    format!("Hello, {}! Welcome to TabForge.", name)
+    format!(
+        "Hello, {}! Welcome to {}.",
+        name,
+        APP_NAME
+    )
 }
 
-fn bootstrap_demo_session() -> RecorderManager {
-    // Simulated browser tab (temporary until extension integration)
-    let youtube_tab = BrowserTab {
+fn create_demo_tab() -> BrowserTab {
+    BrowserTab {
         id: "tab_001".to_string(),
         title: "YouTube".to_string(),
         url: "https://youtube.com".to_string(),
-        width: 1920,
-        height: 1080,
-        fps: 60,
-    };
+        width: DEFAULT_WIDTH,
+        height: DEFAULT_HEIGHT,
+        fps: DEFAULT_FPS,
+    }
+}
 
-    // Simulated recording session
-    let youtube_session = RecordingSession {
-        tab: youtube_tab,
-        output_file: "youtube_1080p.mp4".to_string(),
+fn create_demo_session() -> RecordingSession {
+    RecordingSession {
+        tab: create_demo_tab(),
+        output_file:
+            "youtube_1080p.mp4".to_string(),
         recording: false,
-    };
+    }
+}
 
-    let mut manager = RecorderManager::new();
+fn bootstrap_session_manager() -> RecorderManager {
+    let mut manager =
+        RecorderManager::new();
 
-    manager.sessions.push(youtube_session);
+    manager
+        .sessions
+        .push(
+            create_demo_session()
+        );
 
     manager
 }
 
-fn print_session_info(manager: &RecorderManager) {
-    println!();
-    println!("========== TABFORGE ==========");
+fn bootstrap_ipc_demo() {
+    let payload = TabPayload {
 
-    for (index, session) in manager.sessions.iter().enumerate() {
+        selected_tabs: vec![
+            "youtube".to_string(),
+            "research".to_string(),
+            "docs".to_string(),
+        ],
+
+        timestamp: 123456789,
+    };
+
+    receive_tabs(payload);
+}
+
+fn print_banner() {
+    println!();
+    println!(
+        "========== {} ==========",
+        APP_NAME
+    );
+}
+
+fn print_session_info(
+    manager: &RecorderManager
+) {
+
+    print_banner();
+
+    for (
+        index,
+        session
+    ) in manager
+        .sessions
+        .iter()
+        .enumerate()
+    {
+
         println!(
             "[{}] {} ({})",
             index + 1,
@@ -51,7 +101,10 @@ fn print_session_info(manager: &RecorderManager) {
             session.tab.id
         );
 
-        println!("URL: {}", session.tab.url);
+        println!(
+            "URL: {}",
+            session.tab.url
+        );
 
         println!(
             "Resolution: {}x{}",
@@ -59,13 +112,24 @@ fn print_session_info(manager: &RecorderManager) {
             session.tab.height
         );
 
-        println!("FPS: {}", session.tab.fps);
+        println!(
+            "FPS: {}",
+            session.tab.fps
+        );
 
-        println!("Output: {}", session.output_file);
+        println!(
+            "Output: {}",
+            session.output_file
+        );
 
-        println!("Recording: {}", session.recording);
+        println!(
+            "Recording: {}",
+            session.recording
+        );
 
-        println!("------------------------------");
+        println!(
+            "---------------------"
+        );
     }
 
     println!(
@@ -73,24 +137,59 @@ fn print_session_info(manager: &RecorderManager) {
         manager.sessions.len()
     );
 
-    println!("==============================");
+    println!(
+        "======================"
+    );
+
     println!();
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+fn initialize_runtime() {
+
+    println!(
+        "[BOOT] Starting {}...",
+        APP_NAME
+    );
+
+    println!(
+        "[BOOT] Runtime initialized"
+    );
+}
+
+#[cfg_attr(
+    mobile,
+    tauri::mobile_entry_point
+)]
 pub fn run() {
 
-    let manager = bootstrap_demo_session();
+    initialize_runtime();
 
-    print_session_info(&manager);
+    let manager =
+        bootstrap_session_manager();
+
+    print_session_info(
+        &manager
+    );
+
+    bootstrap_ipc_demo();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+
+        .plugin(
+            tauri_plugin_opener::init()
+        )
+
         .invoke_handler(
             tauri::generate_handler![
                 greet
             ]
         )
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+
+        .run(
+            tauri::generate_context!()
+        )
+
+        .expect(
+            "Failed to start TabForge"
+        );
 }
