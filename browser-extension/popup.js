@@ -13,7 +13,7 @@ async function loadTabs() {
         const wrapper =
             document.createElement("div");
 
-        wrapper.style.marginBottom="8px";
+        wrapper.style.marginBottom = "8px";
 
         const checkbox =
             document.createElement("input");
@@ -24,9 +24,7 @@ async function loadTabs() {
 
             if (checkbox.checked) {
 
-                selectedTabs.push(
-                    tab.id
-                );
+                selectedTabs.push(tab.id);
 
             } else {
 
@@ -34,11 +32,10 @@ async function loadTabs() {
                     selectedTabs.filter(
                         id => id !== tab.id
                     );
-
             }
 
             console.log(
-                "Selected:",
+                "Selected tabs:",
                 selectedTabs
             );
         };
