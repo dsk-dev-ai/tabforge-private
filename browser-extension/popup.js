@@ -1,21 +1,65 @@
+let selectedTabs = [];
+
 async function loadTabs() {
 
-    const tabs = await chrome.tabs.query({});
+    const tabs =
+        await chrome.tabs.query({});
 
     const container =
         document.getElementById("tabs");
 
     container.innerHTML="";
 
-    tabs.forEach(tab=>{
+    tabs.forEach(tab => {
 
-        const item =
+        const wrapper =
             document.createElement("div");
 
-        item.innerText=
+        const checkbox =
+            document.createElement("input");
+
+        checkbox.type="checkbox";
+
+        checkbox.onchange=()=>{
+
+            if(checkbox.checked){
+
+                selectedTabs.push(
+                    tab.id
+                );
+
+            } else {
+
+                selectedTabs=
+                selectedTabs.filter(
+                    id=>id!==tab.id
+                );
+
+            }
+
+            console.log(
+                selectedTabs
+            );
+
+        };
+
+        const label=
+            document.createElement("span");
+
+        label.innerText=
             tab.title;
 
-        container.appendChild(item);
+        wrapper.appendChild(
+            checkbox
+        );
+
+        wrapper.appendChild(
+            label
+        );
+
+        container.appendChild(
+            wrapper
+        );
 
     });
 
