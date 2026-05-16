@@ -1,150 +1,151 @@
-// TabForge Live Capture Engine
+let activeRecorders = new Map();
 
-const activeCaptures = new Map();
+async function startTabCapture(tabId){
 
-async function initializeCaptureEngine() {
+    try{
 
-    console.log(
-        "[TABFORGE] Live capture engine ready"
-    );
+        const stream=
 
-    console.log(
-        "[TABFORGE] Waiting for tab capture requests"
-    );
-}
+        await navigator.mediaDevices
+        .getDisplayMedia({
 
-async function startTabCapture(tabId) {
+            video:{
+                preferCurrentTab:true
+            },
 
-    try {
+            audio:true
+        });
 
-        console.log(
-            `[CAPTURE] Requesting stream for tab ${tabId}`
+
+        const recorder=
+
+        new MediaRecorder(
+
+            stream,
+
+            {
+                mimeType:
+                "video/webm"
+            }
+
         );
 
-        const stream =
-            await chrome.tabCapture.capture({
 
-                audio: true,
+        recorder.ondataavailable=
 
-                video: true,
+        async(event)=>{
 
-                videoConstraints: {
-                    mandatory: {
-                        maxWidth: 1920,
-                        maxHeight: 1080,
-                        maxFrameRate: 60
-                    }
-                }
+            if(
+                event.data.size<=0
+            ){
+                return;
+            }
+
+
+            const buffer=
+
+            await event
+            .data
+            .arrayBuffer();
+
+
+            console.log(
+                "[CAPTURE]",
+                tabId,
+                buffer.byteLength
+            );
+
+
+            chrome.runtime
+            .sendMessage({
+
+                type:
+                "STREAM_CHUNK",
+
+                tabId:
+                tabId,
+
+                payload:
+                Array.from(
+                    new Uint8Array(
+                        buffer
+                    )
+                ),
+
+                timestamp:
+                Date.now()
+
             });
 
-        if (!stream) {
+        };
 
-            console.error(
-                `[CAPTURE] Failed for tab ${tabId}`
-            );
 
-            return;
-        }
+        recorder.start(
+            1000
+        );
+
+
+        activeRecorders.set(
+
+            tabId,
+
+            recorder
+        );
+
 
         console.log(
-            `[CAPTURE] Stream active for tab ${tabId}`
+            "[CAPTURE STARTED]",
+            tabId
         );
 
-        const recorder =
-            new MediaRecorder(
-                stream,
-                {
-                    mimeType:
-                        "video/webm;codecs=vp9,opus"
-                }
-            );
+    }
 
-        recorder.ondataavailable =
-            async (event) => {
-
-            if (
-                event.data &&
-                event.data.size > 0
-            ) {
-
-                console.log(
-                    `[CHUNK] ${tabId} -> ${event.data.size} bytes`
-                );
-
-                /*
-                    Future:
-                    Send chunk to Rust IPC
-                */
-            }
-        };
-
-        recorder.onstart = () => {
-
-            console.log(
-                `[RECORDER] Started ${tabId}`
-            );
-        };
-
-        recorder.onstop = () => {
-
-            console.log(
-                `[RECORDER] Stopped ${tabId}`
-            );
-        };
-
-        recorder.start(1000);
-
-        activeCaptures.set(
-            tabId,
-            {
-                stream,
-                recorder
-            }
-        );
-
-    } catch (error) {
+    catch(error){
 
         console.error(
-            `[CAPTURE ERROR] ${tabId}`,
             error
         );
+
     }
+
 }
 
-function stopTabCapture(tabId) {
 
-    const capture =
-        activeCaptures.get(tabId);
+function stopTabCapture(
+    tabId
+){
 
-    if (!capture) {
+    const recorder=
 
-        console.warn(
-            `[CAPTURE] No active session for ${tabId}`
-        );
+    activeRecorders.get(
+        tabId
+    );
 
+
+    if(
+        !recorder
+    ){
         return;
     }
 
-    capture.recorder.stop();
 
-    capture.stream
-        .getTracks()
-        .forEach(
-            track => track.stop()
-        );
+    recorder.stop();
 
-    activeCaptures.delete(tabId);
+    activeRecorders.delete(
+        tabId
+    );
+
 
     console.log(
-        `[CAPTURE] Released ${tabId}`
+        "[CAPTURE STOPPED]",
+        tabId
     );
+
 }
 
-initializeCaptureEngine();
 
-window.TabForgeCapture = {
+window.startTabCapture=
+startTabCapture;
 
-    startTabCapture,
-
-    stopTabCapture
-};
+window.stopTabCapture=
+stopTabCapture;
