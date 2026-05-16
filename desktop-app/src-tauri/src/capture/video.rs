@@ -1,10 +1,5 @@
 pub fn initialize_video() {
+    println!("[VIDEO] Tab video capture ready");
 
-    println!(
-        "[VIDEO] Tab video capture ready"
-    );
-
-    println!(
-        "[VIDEO] 1920x1080 @ 60FPS"
-    );
+    println!("[VIDEO] 1920x1080 @ 60FPS");
 }

@@ -1,30 +1,13 @@
 use crate::recorder::session::RecordingSession;
 
-pub fn start_capture(
-    session: &RecordingSession
-) {
+pub fn start_capture(session: &RecordingSession) {
+    println!("[RECORDER] Capture started");
 
-    println!(
-        "[RECORDER] Capture started"
-    );
+    println!("Tab: {}", session.tab.title);
 
-    println!(
-        "Tab: {}",
-        session.tab.title
-    );
+    println!("Output: {}", session.output_file);
 
-    println!(
-        "Output: {}",
-        session.output_file
-    );
+    println!("Audio Enabled: {}", session.audio_enabled);
 
-    println!(
-        "Audio Enabled: {}",
-        session.audio_enabled
-    );
-
-    println!(
-        "Video Enabled: {}",
-        session.video_enabled
-    );
+    println!("Video Enabled: {}", session.video_enabled);
 }

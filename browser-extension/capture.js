@@ -1,150 +1,347 @@
-// TabForge Live Capture Engine
+// TabForge Real Browser Stream Engine
 
 const activeCaptures = new Map();
 
-async function initializeCaptureEngine() {
+const sockets = new Map();
+
+const WS_URL =
+    "ws://127.0.0.1:8765";
+
+
+async function initializeCaptureEngine(){
 
     console.log(
-        "[TABFORGE] Live capture engine ready"
+        "[TABFORGE] Capture engine online"
     );
 
     console.log(
-        "[TABFORGE] Waiting for tab capture requests"
+        "[TABFORGE] WebSocket target:",
+        WS_URL
     );
+
 }
 
-async function startTabCapture(tabId) {
 
-    try {
+async function createSocket(
+    tabId
+){
 
-        console.log(
-            `[CAPTURE] Requesting stream for tab ${tabId}`
-        );
+    return new Promise(
 
-        const stream =
-            await chrome.tabCapture.capture({
+        (resolve,reject)=>{
 
-                audio: true,
-
-                video: true,
-
-                videoConstraints: {
-                    mandatory: {
-                        maxWidth: 1920,
-                        maxHeight: 1080,
-                        maxFrameRate: 60
-                    }
-                }
-            });
-
-        if (!stream) {
-
-            console.error(
-                `[CAPTURE] Failed for tab ${tabId}`
-            );
-
-            return;
-        }
-
-        console.log(
-            `[CAPTURE] Stream active for tab ${tabId}`
-        );
-
-        const recorder =
-            new MediaRecorder(
-                stream,
-                {
-                    mimeType:
-                        "video/webm;codecs=vp9,opus"
-                }
-            );
-
-        recorder.ondataavailable =
-            async (event) => {
-
-            if (
-                event.data &&
-                event.data.size > 0
-            ) {
-
-                console.log(
-                    `[CHUNK] ${tabId} -> ${event.data.size} bytes`
+            const socket=
+                new WebSocket(
+                    WS_URL
                 );
 
-                /*
-                    Future:
-                    Send chunk to Rust IPC
-                */
-            }
-        };
+            socket.binaryType=
+                "arraybuffer";
 
-        recorder.onstart = () => {
+            socket.onopen=()=>{
 
-            console.log(
-                `[RECORDER] Started ${tabId}`
-            );
-        };
+                console.log(
+                    `[SOCKET] Connected ${tabId}`
+                );
 
-        recorder.onstop = () => {
+                sockets.set(
+                    tabId,
+                    socket
+                );
 
-            console.log(
-                `[RECORDER] Stopped ${tabId}`
-            );
-        };
+                resolve(
+                    socket
+                );
 
-        recorder.start(1000);
+            };
 
-        activeCaptures.set(
-            tabId,
-            {
-                stream,
-                recorder
-            }
-        );
 
-    } catch (error) {
+            socket.onerror=(e)=>{
 
-        console.error(
-            `[CAPTURE ERROR] ${tabId}`,
-            error
-        );
-    }
-}
+                console.error(
+                    `[SOCKET] Failed ${tabId}`,
+                    e
+                );
 
-function stopTabCapture(tabId) {
+                reject(e);
 
-    const capture =
-        activeCaptures.get(tabId);
+            };
 
-    if (!capture) {
 
-        console.warn(
-            `[CAPTURE] No active session for ${tabId}`
-        );
+            socket.onclose=()=>{
 
-        return;
-    }
+                console.log(
+                    `[SOCKET] Closed ${tabId}`
+                );
 
-    capture.recorder.stop();
+                sockets.delete(
+                    tabId
+                );
 
-    capture.stream
-        .getTracks()
-        .forEach(
-            track => track.stop()
-        );
+            };
 
-    activeCaptures.delete(tabId);
+        }
 
-    console.log(
-        `[CAPTURE] Released ${tabId}`
     );
+
 }
+
+
+
+async function startTabCapture(
+    tabId
+){
+
+try{
+
+console.log(
+`[CAPTURE] Starting ${tabId}`
+);
+
+
+const stream=
+
+await chrome.tabCapture.capture({
+
+audio:true,
+
+video:true,
+
+videoConstraints:{
+
+mandatory:{
+
+maxWidth:1920,
+
+maxHeight:1080,
+
+maxFrameRate:60
+
+}
+
+}
+
+});
+
+
+if(!stream){
+
+throw new Error(
+"No stream returned"
+);
+
+}
+
+
+const socket=
+
+await createSocket(
+tabId
+);
+
+
+const recorder=
+
+new MediaRecorder(
+
+stream,
+
+{
+
+mimeType:
+"video/webm;codecs=vp9,opus"
+
+}
+
+);
+
+
+
+recorder.ondataavailable=
+
+async(event)=>{
+
+
+if(
+
+event.data.size===0
+
+||
+
+socket.readyState!==1
+
+){
+
+return;
+
+}
+
+
+const buffer=
+
+await event
+.data
+.arrayBuffer();
+
+
+const metadata={
+
+tabId,
+
+timestamp:
+Date.now(),
+
+type:
+"video/webm"
+
+};
+
+
+socket.send(
+
+JSON.stringify(
+metadata
+)
+
+);
+
+
+socket.send(
+buffer
+);
+
+
+console.log(
+
+`[CHUNK] ${tabId} → ${event.data.size}`
+
+);
+
+};
+
+
+
+recorder.onstart=()=>{
+
+console.log(
+`[RECORDER] ${tabId} active`
+);
+
+};
+
+
+recorder.onstop=()=>{
+
+console.log(
+`[RECORDER] ${tabId} stopped`
+);
+
+};
+
+
+recorder.start(
+1000
+);
+
+
+activeCaptures.set(
+
+tabId,
+
+{
+
+stream,
+
+recorder,
+
+socket
+
+}
+
+);
+
+}
+catch(error){
+
+console.error(
+
+`[CAPTURE ERROR] ${tabId}`,
+
+error
+
+);
+
+}
+
+}
+
+
+
+function stopTabCapture(
+
+tabId
+
+){
+
+const capture=
+
+activeCaptures.get(
+tabId
+);
+
+
+if(!capture){
+
+return;
+
+}
+
+
+capture.recorder.stop();
+
+
+capture.stream
+
+.getTracks()
+
+.forEach(
+
+track=>
+
+track.stop()
+
+);
+
+
+if(
+capture.socket
+){
+
+capture.socket.close();
+
+}
+
+
+activeCaptures.delete(
+tabId
+);
+
+
+console.log(
+`[CAPTURE] Released ${tabId}`
+);
+
+}
+
+
 
 initializeCaptureEngine();
 
-window.TabForgeCapture = {
 
-    startTabCapture,
+window.TabForgeCapture={
 
-    stopTabCapture
+startTabCapture,
+
+stopTabCapture
+
 };

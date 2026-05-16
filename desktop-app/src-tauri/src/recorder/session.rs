@@ -3,7 +3,6 @@ use crate::models::tab::BrowserTab;
 #[derive(Debug, Clone)]
 
 pub struct RecordingSession {
-
     pub tab: BrowserTab,
 
     pub output_file: String,
@@ -18,5 +17,5 @@ pub struct RecordingSession {
 
     pub separate_audio: bool,
 
-    pub fps: u32
+    pub fps: u32,
 }
