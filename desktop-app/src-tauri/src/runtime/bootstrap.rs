@@ -1,14 +1,5 @@
-use crate::capture::audio::
-    initialize_audio;
-
-use crate::capture::router::
-    initialize_router;
-
 use crate::capture::stream::
     initialize_stream;
-
-use crate::capture::video::
-    initialize_video;
 
 use crate::encoder::ffmpeg::
     initialize_ffmpeg;
@@ -25,7 +16,8 @@ use crate::workers::pool::
     initialize_workers;
 
 
-pub fn initialize_runtime_services() {
+
+pub fn initialize_runtime_services(){
 
     println!();
 
@@ -33,53 +25,38 @@ pub fn initialize_runtime_services() {
         "========== RUNTIME BOOT =========="
     );
 
+
     /*
-    ---------------------------------
-    CAPTURE SYSTEM
-    ---------------------------------
+    CAPTURE
     */
 
     initialize_stream();
 
-    initialize_audio();
-
-    initialize_video();
-
-    initialize_router();
 
     /*
-    ---------------------------------
-    ENCODER SYSTEM
-    ---------------------------------
+    ENCODER
     */
 
     initialize_ffmpeg();
 
     initialize_hardware();
 
+
     /*
-    ---------------------------------
-    WORKER SYSTEM
-    ---------------------------------
+    WORKERS
     */
 
     initialize_workers();
 
+
     /*
-    ---------------------------------
-    IPC SYSTEM
-    ---------------------------------
+    IPC
     */
 
     initialize_socket_runtime();
 
     listen_for_streams();
 
-    /*
-    ---------------------------------
-    FINAL STATUS
-    ---------------------------------
-    */
 
     println!(
         "[BOOT] Runtime initialized"
@@ -90,11 +67,15 @@ pub fn initialize_runtime_services() {
     );
 
     println!(
-        "[BOOT] Live chunk transport active"
+        "[BOOT] WebSocket bridge active"
     );
 
     println!(
         "[BOOT] Per-tab audio isolation enabled"
+    );
+
+    println!(
+        "[BOOT] FFmpeg mux pipeline active"
     );
 
     println!(
@@ -106,4 +87,5 @@ pub fn initialize_runtime_services() {
     );
 
     println!();
+
 }

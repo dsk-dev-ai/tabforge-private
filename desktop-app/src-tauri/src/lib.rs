@@ -1,15 +1,14 @@
 mod capture;
 mod runtime;
 
-mod recorder;
 mod encoder;
 mod ipc;
-mod workers;
 mod models;
+mod recorder;
+mod workers;
 
-use runtime::bootstrap::{
-    initialize_runtime_services
-};
+use runtime::bootstrap::
+    initialize_runtime_services;
 
 use ipc::bridge::{
     receive_tabs,
@@ -17,474 +16,475 @@ use ipc::bridge::{
     TabPayload
 };
 
-use models::tab::BrowserTab;
+use models::tab::
+    BrowserTab;
 
-use recorder::manager::RecorderManager;
+use recorder::manager::
+    RecorderManager;
 
-use recorder::session::RecordingSession;
+use recorder::session::
+    RecordingSession;
 
-const APP_NAME: &str =
-    "TabForge";
 
-const VERSION: &str =
-    "0.1.0";
+const APP_NAME:&str=
+"TabForge";
 
-const DEFAULT_WIDTH: u32 =
-    1920;
+const VERSION:&str=
+"0.1.0";
 
-const DEFAULT_HEIGHT: u32 =
-    1080;
+const WIDTH:u32=1920;
 
-const DEFAULT_FPS: u32 =
-    60;
+const HEIGHT:u32=1080;
 
-const DEFAULT_AUDIO_BITRATE: u32 =
-    320;
+const FPS:u32=60;
 
-const DEFAULT_VIDEO_BITRATE: u32 =
-    8000;
+
 
 #[tauri::command]
-fn greet(
-    name: &str
-) -> String {
 
-    format!(
-        "Hello {}, welcome to {} {}",
-        name,
-        APP_NAME,
-        VERSION
-    )
+fn greet(
+name:&str
+)->String{
+
+format!(
+"Hello {}, welcome to {} {}",
+name,
+APP_NAME,
+VERSION
+)
+
 }
+
+
 
 fn create_browser_tab(
-    id: &str,
-    title: &str,
-    url: &str
-) -> BrowserTab {
 
-    BrowserTab {
+id:&str,
 
-        id:
-            id.to_string(),
+title:&str,
 
-        title:
-            title.to_string(),
+url:&str
 
-        url:
-            url.to_string(),
+)->BrowserTab{
 
-        width:
-            DEFAULT_WIDTH,
 
-        height:
-            DEFAULT_HEIGHT,
+BrowserTab{
 
-        fps:
-            DEFAULT_FPS
-    }
+id:
+id.to_string(),
+
+title:
+title.to_string(),
+
+url:
+url.to_string(),
+
+width:
+WIDTH,
+
+height:
+HEIGHT,
+
+fps:
+FPS,
+
+browser:
+"Chrome"
+.to_string(),
+
+active:
+true,
+
+audio_available:
+true,
+
+stream_type:
+"video/webm"
+.to_string()
+
 }
 
-fn sanitize_filename(
-    value: &str
-) -> String {
-
-    value
-
-        .to_lowercase()
-
-        .replace(" ", "_")
-
-        .replace("/", "_")
-
-        .replace("\\", "_")
-
-        .replace(":", "_")
 }
 
-fn create_output_filename(
-    tab: &BrowserTab
-) -> String {
 
-    let safe_name =
-        sanitize_filename(
-            &tab.title
-        );
-
-    format!(
-        "{}_{}p.mp4",
-        safe_name,
-        tab.height
-    )
-}
 
 fn create_recording_session(
-    tab: BrowserTab
-) -> RecordingSession {
 
-    RecordingSession {
+tab:BrowserTab
 
-        output_file:
-            create_output_filename(
-                &tab
-            ),
+)->RecordingSession{
 
-        fps:
-            tab.fps,
+let filename=
 
-        tab,
+tab.title
 
-        recording:
-            false,
+.to_lowercase()
 
-        audio_enabled:
-            true,
+.replace(
+" ",
+"_"
+);
 
-        video_enabled:
-            true,
 
-        hardware_encoding:
-            true,
+RecordingSession{
 
-        separate_audio:
-            true
-    }
+tab,
+
+output_file:
+
+format!(
+"{}_1080p.mp4",
+filename
+),
+
+fps:
+FPS,
+
+recording:
+false,
+
+audio_enabled:
+true,
+
+video_enabled:
+true,
+
+separate_audio:
+true,
+
+hardware_encoding:
+true,
+
+audio_bitrate:
+320,
+
+video_bitrate:
+8000,
+
+worker_id:
+None,
+
+stream_connected:
+false
+
 }
 
-fn build_demo_manager()
--> RecorderManager {
-
-    let mut manager =
-        RecorderManager::new();
-
-    let tabs = vec![
-
-        create_browser_tab(
-            "tab_001",
-            "YouTube",
-            "https://youtube.com"
-        ),
-
-        create_browser_tab(
-            "tab_002",
-            "Research",
-            "https://openai.com"
-        ),
-
-        create_browser_tab(
-            "tab_003",
-            "Docs",
-            "https://docs.rs"
-        )
-    ];
-
-    for tab in tabs {
-
-        manager
-            .sessions
-            .push(
-                create_recording_session(
-                    tab
-                )
-            );
-    }
-
-    manager
 }
 
-fn simulate_extension_payload() {
 
-    let payload =
 
-        TabPayload {
+fn build_manager()
 
-        selected_tabs:
+->RecorderManager{
 
-            vec![
+let mut manager=
 
-                TabData {
+RecorderManager::new();
 
-                    id:
-                        "tab_001"
-                        .to_string(),
 
-                    title:
-                        "YouTube"
-                        .to_string(),
+let tabs=vec![
 
-                    url:
-                        "https://youtube.com"
-                        .to_string()
-                },
+create_browser_tab(
+"tab_001",
+"YouTube",
+"https://youtube.com"
+),
 
-                TabData {
+create_browser_tab(
+"tab_002",
+"Research",
+"https://openai.com"
+),
 
-                    id:
-                        "tab_002"
-                        .to_string(),
+create_browser_tab(
+"tab_003",
+"Docs",
+"https://docs.rs"
+)
 
-                    title:
-                        "Research"
-                        .to_string(),
+];
 
-                    url:
-                        "https://openai.com"
-                        .to_string()
-                },
 
-                TabData {
+for tab in tabs{
 
-                    id:
-                        "tab_003"
-                        .to_string(),
+manager.add_session(
 
-                    title:
-                        "Docs"
-                        .to_string(),
+create_recording_session(
+tab
+)
 
-                    url:
-                        "https://docs.rs"
-                        .to_string()
-                }
-            ],
+);
 
-        timestamp:
-            123456789
-    };
-
-    let sessions =
-        receive_tabs(
-            payload
-        );
-
-    print_dynamic_sessions(
-        sessions
-    );
 }
 
-fn print_dynamic_sessions(
-    sessions:
-    Vec<RecordingSession>
-) {
 
-    println!();
+manager
 
-    println!(
-        "===== SESSION BUILDER ====="
-    );
-
-    for session in sessions {
-
-        println!(
-            "{} -> {}",
-            session.tab.title,
-            session.output_file
-        );
-
-        println!(
-            "Audio Enabled: {}",
-            session.audio_enabled
-        );
-
-        println!(
-            "Separate Audio: {}",
-            session.separate_audio
-        );
-
-        println!(
-            "Hardware Encoding: {}",
-            session.hardware_encoding
-        );
-
-        println!(
-            "---------------------------"
-        );
-    }
-
-    println!();
 }
+
+
+
+fn simulate_extension_bridge(){
+
+let payload=
+
+TabPayload{
+
+selected_tabs:
+
+vec![
+
+TabData{
+
+id:
+"tab_001"
+.to_string(),
+
+title:
+"YouTube"
+.to_string(),
+
+url:
+"https://youtube.com"
+.to_string()
+
+},
+
+TabData{
+
+id:
+"tab_002"
+.to_string(),
+
+title:
+"Research"
+.to_string(),
+
+url:
+"https://openai.com"
+.to_string()
+
+},
+
+TabData{
+
+id:
+"tab_003"
+.to_string(),
+
+title:
+"Docs"
+.to_string(),
+
+url:
+"https://docs.rs"
+.to_string()
+
+}
+
+],
+
+timestamp:
+123456789
+
+};
+
+
+let sessions=
+
+receive_tabs(
+payload
+);
+
+
+println!();
+
+println!(
+"===== SESSION BUILDER ====="
+);
+
+
+for s in sessions{
+
+println!(
+"{} -> {}",
+
+s.tab.title,
+
+s.output_file
+);
+
+println!(
+"Audio: {}",
+s.audio_enabled
+);
+
+println!(
+"Separate Audio: {}",
+s.separate_audio
+);
+
+println!(
+"HW Encode: {}",
+s.hardware_encoding
+);
+
+println!(
+"Worker: {:?}",
+s.worker_id
+);
+
+println!(
+"Stream: {}",
+s.stream_connected
+);
+
+println!(
+"----------------"
+);
+
+}
+
+}
+
+
 
 fn print_dashboard(
-    manager: &RecorderManager
-) {
 
-    println!();
+manager:
+&RecorderManager
 
-    println!(
-        "========== {} {} ==========",
-        APP_NAME,
-        VERSION
-    );
+){
 
-    for (
-        index,
-        session
-    )
+println!();
 
-    in manager
-        .sessions
-        .iter()
-        .enumerate()
+println!(
+"========== {} {} ==========",
+APP_NAME,
+VERSION
+);
 
-    {
 
-        println!(
-            "[{}] {} ({})",
+for(
 
-            index + 1,
+index,
+session
 
-            session.tab.title,
+)
 
-            session.tab.id
-        );
+in manager
+.sessions
+.iter()
+.enumerate()
 
-        println!(
-            "URL: {}",
-            session.tab.url
-        );
+{
 
-        println!(
-            "Resolution: {}x{}",
+println!(
+"[{}] {}",
 
-            session.tab.width,
+index+1,
 
-            session.tab.height
-        );
+session.tab.title
+);
 
-        println!(
-            "FPS: {}",
-            session.fps
-        );
+println!(
+"URL: {}",
+session.tab.url
+);
 
-        println!(
-            "Audio Enabled: {}",
-            session.audio_enabled
-        );
+println!(
+"Browser: {}",
+session.tab.browser
+);
 
-        println!(
-            "Video Enabled: {}",
-            session.video_enabled
-        );
+println!(
+"Resolution: {}",
+session.tab.resolution()
+);
 
-        println!(
-            "Separate Audio: {}",
-            session.separate_audio
-        );
+println!(
+"FPS: {}",
+session.fps
+);
 
-        println!(
-            "Hardware Encoding: {}",
-            session.hardware_encoding
-        );
+println!(
+"Audio: {}",
+session.audio_enabled
+);
 
-        println!(
-            "Audio Bitrate: {} kbps",
-            DEFAULT_AUDIO_BITRATE
-        );
+println!(
+"Video: {}",
+session.video_enabled
+);
 
-        println!(
-            "Video Bitrate: {} kbps",
-            DEFAULT_VIDEO_BITRATE
-        );
+println!(
+"Output: {}",
+session.output_file
+);
 
-        println!(
-            "Output: {}",
-            session.output_file
-        );
+println!(
+"----------------"
+);
 
-        println!(
-            "Recording: {}",
-            session.recording
-        );
-
-        println!(
-            "---------------------------"
-        );
-    }
-
-    println!(
-        "Active Sessions: {}",
-        manager.sessions.len()
-    );
-
-    println!(
-        "============================"
-    );
-
-    println!();
 }
 
-fn initialize_runtime() {
-
-    println!(
-        "[BOOT] Starting {} {}",
-        APP_NAME,
-        VERSION
-    );
-
-    initialize_runtime_services();
-
-    println!(
-        "[BOOT] Runtime initialized"
-    );
-
-    println!(
-        "[BOOT] Multi-tab session engine online"
-    );
-
-    println!(
-        "[BOOT] Per-tab audio isolation enabled"
-    );
-
-    println!(
-        "[BOOT] FFmpeg pipeline ready"
-    );
-
-    println!(
-        "[BOOT] Hardware acceleration enabled"
-    );
 }
+
+
 
 #[cfg_attr(
-    mobile,
-    tauri::mobile_entry_point
+mobile,
+tauri::mobile_entry_point
 )]
 
-pub fn run() {
+pub fn run(){
 
-    initialize_runtime();
+println!(
+"[BOOT] Starting {} {}",
+APP_NAME,
+VERSION
+);
 
-    let manager =
-        build_demo_manager();
+initialize_runtime_services();
 
-    print_dashboard(
-        &manager
-    );
+let manager=
+build_manager();
 
-    simulate_extension_payload();
+print_dashboard(
+&manager
+);
 
-    tauri::Builder
-        ::default()
+simulate_extension_bridge();
 
-        .plugin(
-            tauri_plugin_opener
-                ::init()
-        )
 
-        .invoke_handler(
+tauri::Builder
+::default()
 
-            tauri
-            ::generate_handler![
+.plugin(
+tauri_plugin_opener
+::init()
+)
 
-                greet
-            ]
-        )
+.invoke_handler(
 
-        .run(
-            tauri
-                ::generate_context!()
-        )
+tauri
+::generate_handler![
 
-        .expect(
-            "TabForge startup failed"
-        );
+greet
+
+]
+
+)
+
+.run(
+
+tauri
+::generate_context!()
+
+)
+
+.expect(
+"TabForge startup failed"
+);
+
 }
