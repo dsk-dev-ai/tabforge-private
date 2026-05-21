@@ -2,314 +2,204 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
-
 use tokio::net::TcpListener;
-
 use tokio_tungstenite::accept_async;
+use uuid::Uuid;
 
-use crate::encoder::ffmpeg::{
-    create_muxer,
-    write_chunk
-};
+use crate::encoder::ffmpeg::{create_muxer, stop_muxer, write_chunk};
 
-#[derive(Debug,Clone)]
+type SessionStore = Arc<Mutex<HashMap<String, StreamSession>>>;
 
-pub struct SocketMessage{
+#[derive(Debug, Clone)]
 
-    pub tab_id:String,
+pub struct SocketMessage {
+    pub tab_id: String,
 
-    pub payload:Vec<u8>,
+    pub payload: Vec<u8>,
 
-    pub timestamp:u64,
+    pub timestamp: u64,
 
-    pub stream_type:String,
+    pub stream_type: String,
 
-    pub chunk_index:u64
+    pub chunk_index: u64,
 }
 
+#[derive(Debug, Default)]
 
-#[derive(Debug,Default)]
+pub struct StreamSession {
+    pub total_bytes: usize,
 
-pub struct StreamSession{
+    pub chunks: u64,
 
-    pub total_bytes:usize,
-
-    pub chunks:u64,
-
-    pub active:bool
+    pub active: bool,
 }
 
+pub fn initialize_socket_runtime() {
+    println!();
+    println!("========== IPC ==========");
 
-pub fn initialize_socket_runtime(){
+    println!("[IPC] Socket runtime initialized");
 
-    println!(
-        "[IPC] Socket initialized"
-    );
+    println!("[IPC] WebSocket transport enabled");
 
-    println!(
-        "[IPC] WebSocket online"
-    );
+    println!("[IPC] Binary streaming enabled");
 
-    println!(
-        "[IPC] Binary mode enabled"
-    );
+    println!("[IPC] Multi-tab routing active");
 
-    println!(
-        "[IPC] Multi-tab routing enabled"
-    );
+    println!("[IPC] Browser ingest enabled");
 
-    println!(
-        "[IPC] Real browser ingest mode"
-    );
-
+    println!("=========================");
+    println!();
 }
 
+pub async fn listen_for_streams() {
+    println!("[IPC] Awaiting extension...");
 
-pub fn listen_for_streams(){
-
-    println!(
-        "[IPC] Awaiting browser extension..."
-    );
-
-    println!(
-        "[IPC] ws://127.0.0.1:8765"
-    );
-
+    println!("[IPC] ws://127.0.0.1:8765");
 }
 
+pub async fn start_websocket_server() {
+    let listener = match TcpListener::bind("127.0.0.1:8765").await {
+        Ok(socket) => socket,
 
-pub async fn start_websocket_server(){
+        Err(error) => {
+            println!("[IPC ERROR] {}", error);
 
-    let listener=
+            return;
+        }
+    };
 
-        TcpListener::bind(
-            "127.0.0.1:8765"
-        )
+    println!("[WS] Server active");
 
-        .await
+    let sessions: SessionStore = Arc::new(Mutex::new(HashMap::new()));
 
-        .unwrap();
+    loop {
+        let connection = listener.accept().await;
 
+        let (stream, _) = match connection {
+            Ok(data) => data,
 
-    println!(
-        "[IPC] Websocket server running"
-    );
+            Err(error) => {
+                println!("[CONNECTION ERROR] {}", error);
 
+                continue;
+            }
+        };
 
-    let sessions=
+        println!("[BROWSER] Connected");
 
-    Arc::new(
+        let sessions = Arc::clone(&sessions);
 
-        Mutex::new(
+        tokio::spawn(async move {
+            handle_connection(stream, sessions).await;
+        });
+    }
+}
 
-            HashMap::<
-                String,
-                StreamSession
-            >::new()
+async fn handle_connection(stream: tokio::net::TcpStream, sessions: SessionStore) {
+    let websocket = match accept_async(stream).await {
+        Ok(ws) => ws,
 
-        )
+        Err(error) => {
+            println!("[WS ERROR] {}", error);
 
-    );
+            return;
+        }
+    };
 
+    let (_, mut read) = websocket.split();
 
-    while let Ok(
-        (stream,_)
-    )=
+    let tab_id = format!("tab_{}", Uuid::new_v4());
 
-    listener.accept().await{
+    println!("[SESSION START] {}", tab_id);
 
+    while let Some(message) = read.next().await {
+        match message {
+            Ok(msg) => {
+                if msg.is_close() {
+                    shutdown_session(&tab_id, &sessions);
 
-        println!(
-            "[IPC] Browser connected"
-        );
-
-
-        let sessions=
-            Arc::clone(
-                &sessions
-            );
-
-
-        tokio::spawn(
-
-            async move{
-
-            let ws=
-
-            accept_async(
-                stream
-            )
-
-            .await
-
-            .unwrap();
-
-
-            let (_write,
-                mut read)=
-
-            ws.split();
-
-
-            while let Some(
-                message
-            )=
-
-            read.next()
-            .await{
-
-
-                if let Ok(msg)=
-                    message{
-
-
-                    if msg.is_binary(){
-
-
-                        let bytes=
-
-                        msg.into_data();
-
-
-                        process_chunk(
-
-                            "tab_001",
-
-                            bytes.len(),
-
-                            &sessions
-
-                        );
-
-                    }
-
+                    break;
                 }
 
+                if msg.is_ping() {
+                    continue;
+                }
+
+                if msg.is_text() {
+                    println!("[META] {}", tab_id);
+
+                    continue;
+                }
+
+                if msg.is_binary() {
+                    let bytes = msg.into_data();
+
+                    process_chunk(&tab_id, bytes.len(), &sessions);
+                }
             }
 
-        });
+            Err(error) => {
+                println!("[STREAM ERROR] {}", error);
 
+                shutdown_session(&tab_id, &sessions);
+
+                break;
+            }
+        }
     }
-
 }
 
+fn process_chunk(tab_id: &str, size: usize, sessions: &SessionStore) {
+    let mut store = sessions.lock().unwrap();
 
+    let session = store.entry(tab_id.to_string()).or_default();
 
-fn process_chunk(
+    session.active = true;
 
-    tab_id:&str,
+    session.chunks += 1;
 
-    size:usize,
+    session.total_bytes += size;
 
-    sessions:
-
-    &Arc<
-
-        Mutex<
-
-        HashMap<
-        String,
-        StreamSession
-
-        >
-
-    >>
-
-){
-
-    let mut store=
-
-        sessions
-        .lock()
-        .unwrap();
-
-
-    let state=
-
-        store
-
-        .entry(
-            tab_id
-            .to_string()
-        )
-
-        .or_default();
-
-
-    state.active=true;
-
-    state.chunks+=1;
-
-    state.total_bytes+=size;
-
-
-    if state.chunks==1{
-
-        create_muxer(
-
-            tab_id,
-
-            &format!(
-                "recordings/{}.mp4",
-                tab_id
-            )
-
-        );
-
+    if session.chunks == 1 {
+        create_muxer(tab_id, &format!("recordings/{}.mp4", tab_id));
     }
 
+    write_chunk(tab_id, size);
 
-    write_chunk(
-        tab_id,
-        size
-    );
+    if session.chunks % 10 == 0 {
+        println!();
 
+        println!("[STREAM] {}", tab_id);
 
-    if state.chunks%10==0{
+        println!("Chunks : {}", session.chunks);
 
+        println!("Bytes : {} KB", session.total_bytes / 1024);
 
-        println!(
-            "[STREAM] {}",
-            tab_id
-        );
+        println!("Active : {}", session.active);
 
-        println!(
-            "Chunks: {}",
-            state.chunks
-        );
-
-        println!(
-            "Bytes: {}KB",
-            state.total_bytes/1024
-        );
-
+        println!("----------------");
     }
-
 }
 
+fn shutdown_session(tab_id: &str, sessions: &SessionStore) {
+    let mut store = sessions.lock().unwrap();
 
+    store.remove(tab_id);
+
+    drop(store);
+
+    stop_muxer(tab_id);
+
+    println!("[SESSION CLOSED] {}", tab_id);
+}
 
 #[allow(dead_code)]
 
-pub fn send_message(
+pub fn send_message(message: SocketMessage) {
+    println!("[OUTBOUND]");
 
-    message:
-    SocketMessage
+    println!("Tab : {}", message.tab_id);
 
-){
-
-    println!(
-        "[IPC OUTBOUND]"
-    );
-
-    println!(
-        "Tab: {}",
-        message.tab_id
-    );
-
-    println!(
-        "Bytes: {}",
-        message.payload.len()
-    );
-
+    println!("Bytes : {}", message.payload.len());
 }
