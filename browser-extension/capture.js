@@ -1,184 +1,389 @@
-// TabForge Live Browser Binary Stream Engine
+// =====================================================
+// TabForge Runtime Capture Engine v1.1
+// Browser → MediaRecorder → WebSocket → Rust
+// Stable Runtime
+// =====================================================
 
-const activeCaptures = new Map();
-
-const sockets = new Map();
-
-const WS_URL = "ws://127.0.0.1:8765";
-
-const RECORD_INTERVAL = 1000;
-
-
-
-async function initializeCaptureEngine(){
-
-    console.log(
-        "[TABFORGE] Capture engine online"
-    );
-
-    console.log(
-        "[TABFORGE] Binary stream mode active"
-    );
-
-    console.log(
-        "[TABFORGE] WebSocket:",
-        WS_URL
-    );
-}
-
-
-
-async function createSocket(
-    tabId
-){
-
-    if(
-        sockets.has(tabId)
-    ){
-
-        const existing=
-            sockets.get(tabId);
-
-        if(
-            existing.readyState===1
-        ){
-
-            return existing;
-        }
-    }
-
-
-    return new Promise(
-
-        (resolve,reject)=>{
-
-            const socket=
-                new WebSocket(
-                    WS_URL
-                );
-
-            socket.binaryType=
-                "arraybuffer";
-
-
-            socket.onopen=()=>{
-
-                console.log(
-                    `[SOCKET] Connected ${tabId}`
-                );
-
-                sockets.set(
-                    tabId,
-                    socket
-                );
-
-                resolve(
-                    socket
-                );
-
-            };
-
-
-            socket.onerror=(error)=>{
-
-                console.error(
-
-                    `[SOCKET ERROR] ${tabId}`,
-
-                    error
-
-                );
-
-                reject(
-                    error
-                );
-
-            };
-
-
-            socket.onclose=()=>{
-
-                console.log(
-                    `[SOCKET CLOSED] ${tabId}`
-                );
-
-                sockets.delete(
-                    tabId
-                );
-
-            };
-
-
-            socket.onmessage=(msg)=>{
-
-                console.log(
-
-                    `[RUST→EXT] ${tabId}`,
-
-                    msg.data
-
-                );
-
-            };
-
-        }
-
-    );
-
-}
-
-
-
-async function startTabCapture(
-    tabId
-){
+(()=>{
 
 try{
 
+if(globalThis.__TABFORGE_RUNTIME__){
+
 console.log(
-`[CAPTURE] Starting ${tabId}`
+"[TABFORGE] Runtime already active"
+);
+
+return;
+
+}
+
+globalThis.__TABFORGE_RUNTIME__=true;
+
+
+// ======================================
+// STATE
+// ======================================
+
+globalThis.__TABFORGE_STATE__ ??= {
+
+sessions:new Map(),
+
+sockets:new Map(),
+
+heartbeats:new Map(),
+
+metrics:{
+
+started:0,
+stopped:0,
+chunks:0,
+bytes:0,
+reconnects:0
+
+}
+
+};
+
+const STATE=
+globalThis.__TABFORGE_STATE__;
+
+const SESSIONS=
+STATE.sessions;
+
+const SOCKETS=
+STATE.sockets;
+
+const HEARTBEATS=
+STATE.heartbeats;
+
+const METRICS=
+STATE.metrics;
+
+
+const WS_URL=
+"ws://127.0.0.1:8765";
+
+const RECORD_INTERVAL=1000;
+
+const WS_TIMEOUT=5000;
+
+const HEARTBEAT=10000;
+
+const MAX_RETRIES=3;
+
+
+
+function now(){
+
+return Date.now();
+
+}
+
+
+function uuid(){
+
+return crypto.randomUUID();
+
+}
+
+
+
+// ======================================
+// SOCKET
+// ======================================
+
+async function createSocket(
+
+sessionId,
+
+retry=0
+
+){
+
+const existing=
+
+SOCKETS.get(
+sessionId
 );
 
 
-const stream=
+if(
 
-await chrome.tabCapture.capture({
+existing &&
+existing.readyState===1
 
-audio:true,
+){
 
-video:true,
+return existing;
 
-videoConstraints:{
+}
 
-mandatory:{
 
-maxWidth:1920,
+return new Promise(
 
-maxHeight:1080,
+(resolve,reject)=>{
 
-maxFrameRate:60
+const socket=
+
+new WebSocket(
+WS_URL
+);
+
+socket.binaryType=
+"arraybuffer";
+
+
+const timeout=
+
+setTimeout(()=>{
+
+socket.close();
+
+reject(
+
+new Error(
+"WS timeout"
+)
+
+);
+
+},WS_TIMEOUT);
+
+
+socket.onopen=()=>{
+
+clearTimeout(
+timeout
+);
+
+SOCKETS.set(
+sessionId,
+socket
+);
+
+
+console.log(
+`[WS OPEN] ${sessionId}`
+);
+
+
+const interval=
+
+setInterval(()=>{
+
+try{
+
+if(
+
+socket.readyState===1
+
+){
+
+socket.send(
+
+JSON.stringify({
+
+type:"heartbeat",
+
+time:now()
+
+})
+
+);
 
 }
 
 }
+catch{}
+
+},HEARTBEAT);
+
+
+HEARTBEATS.set(
+sessionId,
+interval
+);
+
+
+resolve(
+socket
+);
+
+};
+
+
+
+socket.onmessage=(m)=>{
+
+console.log(
+"[RUST]",
+m.data
+);
+
+};
+
+
+socket.onerror=(e)=>{
+
+console.warn(
+"[WS ERROR]",
+e
+);
+
+};
+
+
+socket.onclose=async()=>{
+
+console.log(
+`[WS CLOSED] ${sessionId}`
+);
+
+
+clearInterval(
+
+HEARTBEATS.get(
+sessionId
+)
+
+);
+
+HEARTBEATS.delete(
+sessionId);
+
+SOCKETS.delete(
+sessionId
+);
+
+
+if(
+
+SESSIONS.has(sessionId)
+&&
+retry<MAX_RETRIES
+
+){
+
+METRICS.reconnects++;
+
+console.log(
+"[WS RETRY]"
+);
+
+try{
+
+await createSocket(
+sessionId,
+retry+1
+);
+
+}
+catch{}
+
+}
+
+};
 
 });
 
+}
 
-if(!stream){
 
-throw new Error(
-"Capture stream unavailable"
+
+// ======================================
+// START
+// ======================================
+
+async function startTabCapture(tabId){
+
+try{
+
+const existing=
+
+SESSIONS.get(
+tabId
 );
 
+
+if(existing){
+
+console.warn(
+"[SKIP ACTIVE]"
+);
+
+return;
+
 }
+
+
+const sessionId=
+uuid();
+
+
+SESSIONS.set(
+
+tabId,
+
+{
+
+starting:true,
+
+sessionId
+
+}
+
+);
+
+
+console.log(
+`[START] ${tabId}`
+);
 
 
 const socket=
 
 await createSocket(
-tabId
+sessionId
 );
+
+
+const stream=
+
+await navigator
+.mediaDevices
+.getDisplayMedia({
+
+video:{
+
+frameRate:60
+
+},
+
+audio:true
+
+});
+
+
+const mime=
+
+MediaRecorder
+.isTypeSupported(
+
+"video/webm;codecs=vp9,opus"
+
+)
+
+?
+
+"video/webm;codecs=vp9,opus"
+
+:
+
+"video/webm";
+
+
+let chunk=0;
 
 
 const recorder=
@@ -189,8 +394,7 @@ stream,
 
 {
 
-mimeType:
-"video/webm;codecs=vp9,opus",
+mimeType:mime,
 
 videoBitsPerSecond:
 8000000,
@@ -203,25 +407,12 @@ audioBitsPerSecond:
 );
 
 
-
 recorder.onstart=()=>{
 
+METRICS.started++;
+
 console.log(
-`[RECORDER] Active ${tabId}`
-);
-
-};
-
-
-
-recorder.onerror=(e)=>{
-
-console.error(
-
-`[RECORDER ERROR] ${tabId}`,
-
-e
-
+"[RECORDER START]"
 );
 
 };
@@ -230,13 +421,14 @@ e
 
 recorder.ondataavailable=
 
-async(event)=>{
+async(e)=>{
+
+try{
 
 if(
 
-!event.data ||
-
-event.data.size===0
+!e.data ||
+e.data.size===0
 
 ){
 
@@ -251,45 +443,44 @@ socket.readyState!==1
 
 ){
 
-console.warn(
-
-`[SOCKET LOST] ${tabId}`
-
-);
-
 return;
 
 }
 
 
-try{
-
 const buffer=
 
-await event
+await e
 .data
 .arrayBuffer();
+
+
+chunk++;
+
+METRICS.chunks++;
+
+METRICS.bytes+=
+
+buffer.byteLength;
 
 
 socket.send(
 
 JSON.stringify({
 
-tabId:
+type:"meta",
+
+sessionId,
 
 tabId,
 
-timestamp:
-
-Date.now(),
-
-mime:
-
-"video/webm",
+chunk,
 
 size:
+buffer.byteLength,
 
-buffer.byteLength
+time:
+now()
 
 })
 
@@ -301,66 +492,87 @@ buffer
 );
 
 
+if(chunk%10===0){
+
 console.log(
 
-`[SEND] ${tabId}`,
-
-`${buffer.byteLength} bytes`
+`[STREAM] chunks=${chunk}`
 
 );
 
 }
-catch(e){
+
+}
+catch(error){
 
 console.error(
-
-`[STREAM ERROR] ${tabId}`,
-
-e
-
+"[CHUNK]",
+error
 );
 
 }
 
 };
-
 
 
 recorder.onstop=()=>{
 
 console.log(
-
-`[RECORDER] Stopped ${tabId}`
-
+"[RECORDER STOP]"
 );
 
 };
 
 
+stream
+.getTracks()
+.forEach(
 
-recorder.start(
-RECORD_INTERVAL
+track=>{
+
+track.addEventListener(
+
+"ended",
+
+()=>{
+
+stopTabCapture(
+tabId
+);
+
+}
+
+);
+
+}
+
 );
 
 
-activeCaptures.set(
+SESSIONS.set(
 
 tabId,
 
 {
 
-stream,
+sessionId,
 
-recorder,
+stream,
 
 socket,
 
-started:
+recorder,
 
-Date.now()
+started:
+now()
 
 }
 
+);
+
+
+recorder.start(
+RECORD_INTERVAL
 );
 
 
@@ -371,12 +583,13 @@ console.log(
 }
 catch(error){
 
+SESSIONS.delete(
+tabId
+);
+
 console.error(
-
-`[CAPTURE FAILED] ${tabId}`,
-
+"[START FAILED]",
 error
-
 );
 
 }
@@ -385,94 +598,175 @@ error
 
 
 
-function stopTabCapture(
-tabId
-){
+// ======================================
+// STOP
+// ======================================
 
-const capture=
+function stopTabCapture(tabId){
 
-activeCaptures.get(
+const session=
+
+SESSIONS.get(
 tabId
 );
 
 
-if(!capture){
-
-console.warn(
-
-`[STOP] No session ${tabId}`
-
-);
+if(!session){
 
 return;
 
 }
 
 
-capture.recorder.stop();
+try{
+
+if(
+
+session.recorder &&
+session.recorder.state!=="inactive"
+
+){
+
+session.recorder.stop();
+
+}
 
 
-capture.stream
-
-.getTracks()
+session.stream
+?.getTracks()
 
 .forEach(
 
-track=>
-
-track.stop()
+t=>t.stop()
 
 );
 
 
 if(
 
-capture.socket &&
-
-capture.socket.readyState===1
+session.socket &&
+session.socket.readyState===1
 
 ){
 
-capture.socket.send(
+session.socket.send(
 
 JSON.stringify({
 
-tabId,
+type:"session_end",
 
-closed:true
+sessionId:
+session.sessionId
 
 })
 
 );
 
-capture.socket.close();
+session.socket.close();
 
 }
 
 
-activeCaptures.delete(
+clearInterval(
+
+HEARTBEATS.get(
+session.sessionId
+)
+
+);
+
+
+HEARTBEATS.delete(
+session.sessionId
+);
+
+SOCKETS.delete(
+session.sessionId
+);
+
+SESSIONS.delete(
 tabId
 );
 
 
-console.log(
+METRICS.stopped++;
 
-`[CAPTURE RELEASED] ${tabId}`
+
+console.log(
+`[STOPPED] ${tabId}`
+);
+
+}
+catch(error){
+
+console.error(
+"[STOP ERROR]",
+error
+);
+
+}
+
+}
+
+
+
+// ======================================
+// DEBUG
+// ======================================
+
+function sessions(){
+
+console.table(
+
+[...SESSIONS.keys()]
 
 );
 
 }
 
 
+function stats(){
 
-initializeCaptureEngine();
+console.table(
+METRICS
+);
+
+}
 
 
+function inspect(){
 
-window.TabForgeCapture={
+console.log(
+STATE
+);
+
+}
+
+
+globalThis.TabForgeCapture={
 
 startTabCapture,
+stopTabCapture,
 
-stopTabCapture
+sessions,
+stats,
+inspect
 
 };
+
+
+console.log(
+"[TABFORGE API READY]"
+);
+
+}
+catch(error){
+
+console.error(
+"[TABFORGE FATAL]",
+error
+);
+
+}
+
+})();

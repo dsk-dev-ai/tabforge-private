@@ -5,65 +5,130 @@
 
   "short_name": "TabForge",
 
-  "version": "0.1.0",
+  "version": "1.2.0",
 
-  "description": "Advanced multi-tab browser recording engine with isolated audio/video capture for TabForge desktop runtime.",
+  "description": "Multi-tab browser recording engine with WebSocket streaming and Rust desktop runtime.",
+
+  "minimum_chrome_version": "110",
 
   "permissions": [
     "tabs",
     "tabCapture",
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "notifications",
+    "alarms"
   ],
 
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "http://127.0.0.1/*"
   ],
 
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+
+    "service_worker":"background.js",
+
+    "type":"module"
+
   },
 
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "TabForge"
+  "action":{
+
+    "default_popup":"popup.html",
+
+    "default_title":"TabForge Runtime",
+
+    "default_icon":{
+
+      "16":"icons/icon16.png",
+
+      "32":"icons/icon32.png",
+
+      "48":"icons/icon48.png",
+
+      "128":"icons/icon128.png"
+
+    }
+
   },
 
-  "content_scripts": [
+  "content_scripts":[
+
     {
-      "matches": [
+
+      "matches":[
         "<all_urls>"
       ],
 
-      "js": [
-        "content.js"
-      ],
-
-      "run_at": "document_idle"
-    }
-  ],
-
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "capture.js",
+      "js":[
+        "content.js",
         "tabstream.js"
       ],
 
-      "matches": [
-        "<all_urls>"
-      ]
+      "run_at":"document_idle"
+
     }
+
   ],
 
-  "icons": {
-    "16": "icons/icon16.png",
-    "32": "icons/icon32.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+  "web_accessible_resources":[
+
+    {
+
+      "resources":[
+
+        "tabstream.js"
+
+      ],
+
+      "matches":[
+        "<all_urls>"
+      ]
+
+    }
+
+  ],
+
+  "commands":{
+
+    "start_capture":{
+
+      "suggested_key":{
+
+        "default":"Ctrl+Shift+S"
+
+      },
+
+      "description":"Start recording"
+
+    },
+
+    "stop_capture":{
+
+      "suggested_key":{
+
+        "default":"Ctrl+Shift+X"
+
+      },
+
+      "description":"Stop recording"
+
+    }
+
   },
 
-  "minimum_chrome_version": "110"
+  "icons":{
+
+    "16":"icons/icon16.png",
+
+    "32":"icons/icon32.png",
+
+    "48":"icons/icon48.png",
+
+    "128":"icons/icon128.png"
+
+  }
+
 }

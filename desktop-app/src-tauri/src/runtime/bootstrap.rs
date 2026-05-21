@@ -1,60 +1,78 @@
+use std::{
+    sync::OnceLock,
+    time::{Duration, Instant},
+};
+
+use tokio::{runtime::Runtime, time::sleep};
+
 use crate::capture::stream::initialize_stream;
 
 use crate::encoder::ffmpeg::initialize_ffmpeg;
+
 use crate::encoder::hardware::initialize_hardware;
 
 use crate::ipc::socket::{initialize_socket_runtime, listen_for_streams, start_websocket_server};
 
-use crate::workers::pool::initialize_workers;
+use crate::workers::pool::{initialize_workers, worker_stats};
 
-use tokio::runtime::Runtime;
+// =====================================
+// GLOBAL
+// =====================================
+
+static RUNTIME_READY: OnceLock<bool> = OnceLock::new();
+
+// =====================================
+// INIT
+// =====================================
 
 pub fn initialize_runtime_services() {
+    let boot = Instant::now();
+
     println!();
 
     println!("========== RUNTIME BOOT ==========");
 
-    /*
-    ---------------------------------
-    CAPTURE SYSTEM
-    ---------------------------------
-    */
+    // =====================================
+    // CAPTURE
+    // =====================================
+
+    println!("[BOOT] Capture");
 
     initialize_stream();
 
-    /*
-    ---------------------------------
-    ENCODER SYSTEM
-    ---------------------------------
-    */
+    // =====================================
+    // ENCODER
+    // =====================================
+
+    println!("[BOOT] Encoder");
 
     initialize_ffmpeg();
 
     initialize_hardware();
 
-    /*
-    ---------------------------------
-    WORKER SYSTEM
-    ---------------------------------
-    */
+    // =====================================
+    // WORKERS
+    // =====================================
+
+    println!("[BOOT] Workers");
 
     initialize_workers();
 
-    /*
-    ---------------------------------
-    IPC SYSTEM
-    ---------------------------------
-    */
+    // =====================================
+    // IPC
+    // =====================================
+
+    println!("[BOOT] IPC");
 
     initialize_socket_runtime();
 
-    /*
-    ---------------------------------
-    TOKIO RUNTIME
-    ---------------------------------
-    */
+    // =====================================
+    // TOKIO
+    // =====================================
 
-    let runtime = Runtime::new().expect("Failed to create Tokio runtime");
+    println!("[BOOT] Tokio");
+
+    let runtime = Runtime::new().expect("tokio init failed");
 
     runtime.spawn(async {
         listen_for_streams().await;
@@ -64,31 +82,63 @@ pub fn initialize_runtime_services() {
         start_websocket_server().await;
     });
 
-    /*
-    keep runtime alive
-    */
+    // background runtime health
+
+    runtime.spawn(async {
+        loop {
+            println!("[RUNTIME HEARTBEAT]");
+
+            sleep(Duration::from_secs(30)).await;
+        }
+    });
+
+    // worker monitor
+
+    runtime.spawn(async {
+        loop {
+            worker_stats();
+
+            sleep(Duration::from_secs(15)).await;
+        }
+    });
+
+    RUNTIME_READY.set(true).ok();
+
+    // keep runtime alive
 
     std::mem::forget(runtime);
 
-    /*
-    ---------------------------------
-    FINAL STATUS
-    ---------------------------------
-    */
+    // =====================================
+    // FINAL
+    // =====================================
 
-    println!("[BOOT] Runtime initialized");
+    println!();
 
-    println!("[BOOT] Multi-tab recording ready");
+    println!("[BOOT OK]");
 
-    println!("[BOOT] WebSocket bridge active");
+    println!("[BOOT] Multi-tab ready");
 
-    println!("[BOOT] Real browser ingest enabled");
+    println!("[BOOT] Browser ingest active");
 
-    println!("[BOOT] FFmpeg mux pipeline active");
+    println!("[BOOT] FFmpeg active");
+
+    println!("[BOOT] Worker routing active");
+
+    println!("[BOOT] WebSocket online");
 
     println!("[BOOT] Hardware acceleration enabled");
+
+    println!("[BOOT TIME] {:?}", boot.elapsed());
 
     println!("==================================");
 
     println!();
+}
+
+// =====================================
+// DEBUG
+// =====================================
+
+pub fn runtime_alive() -> bool {
+    RUNTIME_READY.get().copied().unwrap_or(false)
 }
