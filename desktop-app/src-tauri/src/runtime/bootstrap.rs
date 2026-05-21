@@ -1,23 +1,26 @@
-use crate::capture::audio::initialize_audio;
-
-use crate::capture::router::initialize_router;
-
 use crate::capture::stream::initialize_stream;
-
-use crate::capture::video::initialize_video;
 
 use crate::encoder::ffmpeg::initialize_ffmpeg;
 
 use crate::encoder::hardware::initialize_hardware;
 
-use crate::ipc::socket::{initialize_socket_runtime, listen_for_streams};
+use crate::ipc::socket::{
+    initialize_socket_runtime,
+    listen_for_streams,
+    start_websocket_server
+};
 
 use crate::workers::pool::initialize_workers;
 
-pub fn initialize_runtime_services() {
+
+pub fn initialize_runtime_services(){
+
     println!();
 
-    println!("========== RUNTIME BOOT ==========");
+    println!(
+        "========== RUNTIME BOOT =========="
+    );
+
 
     /*
     ---------------------------------
@@ -27,11 +30,6 @@ pub fn initialize_runtime_services() {
 
     initialize_stream();
 
-    initialize_audio();
-
-    initialize_video();
-
-    initialize_router();
 
     /*
     ---------------------------------
@@ -43,6 +41,7 @@ pub fn initialize_runtime_services() {
 
     initialize_hardware();
 
+
     /*
     ---------------------------------
     WORKER SYSTEM
@@ -50,6 +49,7 @@ pub fn initialize_runtime_services() {
     */
 
     initialize_workers();
+
 
     /*
     ---------------------------------
@@ -61,23 +61,60 @@ pub fn initialize_runtime_services() {
 
     listen_for_streams();
 
+
+    /*
+    ---------------------------------
+    WEBSOCKET SERVER
+    ---------------------------------
+    */
+
+    tokio::spawn(
+
+        async{
+
+            start_websocket_server()
+
+            .await;
+
+        }
+
+    );
+
+
     /*
     ---------------------------------
     FINAL STATUS
     ---------------------------------
     */
 
-    println!("[BOOT] Runtime initialized");
+    println!(
+        "[BOOT] Runtime initialized"
+    );
 
-    println!("[BOOT] Multi-tab recording ready");
+    println!(
+        "[BOOT] Multi-tab recording ready"
+    );
 
-    println!("[BOOT] Live chunk transport active");
+    println!(
+        "[BOOT] WebSocket bridge active"
+    );
 
-    println!("[BOOT] Per-tab audio isolation enabled");
+    println!(
+        "[BOOT] Real browser ingest enabled"
+    );
 
-    println!("[BOOT] Hardware acceleration enabled");
+    println!(
+        "[BOOT] FFmpeg mux pipeline active"
+    );
 
-    println!("==================================");
+    println!(
+        "[BOOT] Hardware acceleration enabled"
+    );
+
+    println!(
+        "=================================="
+    );
 
     println!();
+
 }
