@@ -1,11 +1,13 @@
-// TabForge Real Browser Stream Engine
+// TabForge Live Browser Binary Stream Engine
 
 const activeCaptures = new Map();
 
 const sockets = new Map();
 
-const WS_URL =
-    "ws://127.0.0.1:8765";
+const WS_URL = "ws://127.0.0.1:8765";
+
+const RECORD_INTERVAL = 1000;
+
 
 
 async function initializeCaptureEngine(){
@@ -15,16 +17,36 @@ async function initializeCaptureEngine(){
     );
 
     console.log(
-        "[TABFORGE] WebSocket target:",
-        WS_URL
+        "[TABFORGE] Binary stream mode active"
     );
 
+    console.log(
+        "[TABFORGE] WebSocket:",
+        WS_URL
+    );
 }
+
 
 
 async function createSocket(
     tabId
 ){
+
+    if(
+        sockets.has(tabId)
+    ){
+
+        const existing=
+            sockets.get(tabId);
+
+        if(
+            existing.readyState===1
+        ){
+
+            return existing;
+        }
+    }
+
 
     return new Promise(
 
@@ -37,6 +59,7 @@ async function createSocket(
 
             socket.binaryType=
                 "arraybuffer";
+
 
             socket.onopen=()=>{
 
@@ -56,14 +79,19 @@ async function createSocket(
             };
 
 
-            socket.onerror=(e)=>{
+            socket.onerror=(error)=>{
 
                 console.error(
-                    `[SOCKET] Failed ${tabId}`,
-                    e
+
+                    `[SOCKET ERROR] ${tabId}`,
+
+                    error
+
                 );
 
-                reject(e);
+                reject(
+                    error
+                );
 
             };
 
@@ -71,11 +99,24 @@ async function createSocket(
             socket.onclose=()=>{
 
                 console.log(
-                    `[SOCKET] Closed ${tabId}`
+                    `[SOCKET CLOSED] ${tabId}`
                 );
 
                 sockets.delete(
                     tabId
+                );
+
+            };
+
+
+            socket.onmessage=(msg)=>{
+
+                console.log(
+
+                    `[RUST→EXT] ${tabId}`,
+
+                    msg.data
+
                 );
 
             };
@@ -127,7 +168,7 @@ maxFrameRate:60
 if(!stream){
 
 throw new Error(
-"No stream returned"
+"Capture stream unavailable"
 );
 
 }
@@ -149,7 +190,13 @@ stream,
 {
 
 mimeType:
-"video/webm;codecs=vp9,opus"
+"video/webm;codecs=vp9,opus",
+
+videoBitsPerSecond:
+8000000,
+
+audioBitsPerSecond:
+320000
 
 }
 
@@ -157,18 +204,39 @@ mimeType:
 
 
 
+recorder.onstart=()=>{
+
+console.log(
+`[RECORDER] Active ${tabId}`
+);
+
+};
+
+
+
+recorder.onerror=(e)=>{
+
+console.error(
+
+`[RECORDER ERROR] ${tabId}`,
+
+e
+
+);
+
+};
+
+
+
 recorder.ondataavailable=
 
 async(event)=>{
 
-
 if(
 
+!event.data ||
+
 event.data.size===0
-
-||
-
-socket.readyState!==1
 
 ){
 
@@ -177,6 +245,25 @@ return;
 }
 
 
+if(
+
+socket.readyState!==1
+
+){
+
+console.warn(
+
+`[SOCKET LOST] ${tabId}`
+
+);
+
+return;
+
+}
+
+
+try{
+
 const buffer=
 
 await event
@@ -184,24 +271,27 @@ await event
 .arrayBuffer();
 
 
-const metadata={
+socket.send(
+
+JSON.stringify({
+
+tabId:
 
 tabId,
 
 timestamp:
+
 Date.now(),
 
-type:
-"video/webm"
+mime:
 
-};
+"video/webm",
 
+size:
 
-socket.send(
+buffer.byteLength
 
-JSON.stringify(
-metadata
-)
+})
 
 );
 
@@ -213,34 +303,43 @@ buffer
 
 console.log(
 
-`[CHUNK] ${tabId} → ${event.data.size}`
+`[SEND] ${tabId}`,
+
+`${buffer.byteLength} bytes`
 
 );
 
-};
+}
+catch(e){
 
+console.error(
 
+`[STREAM ERROR] ${tabId}`,
 
-recorder.onstart=()=>{
+e
 
-console.log(
-`[RECORDER] ${tabId} active`
 );
 
+}
+
 };
+
 
 
 recorder.onstop=()=>{
 
 console.log(
-`[RECORDER] ${tabId} stopped`
+
+`[RECORDER] Stopped ${tabId}`
+
 );
 
 };
 
 
+
 recorder.start(
-1000
+RECORD_INTERVAL
 );
 
 
@@ -254,10 +353,19 @@ stream,
 
 recorder,
 
-socket
+socket,
+
+started:
+
+Date.now()
 
 }
 
+);
+
+
+console.log(
+`[LIVE] ${tabId}`
 );
 
 }
@@ -265,7 +373,7 @@ catch(error){
 
 console.error(
 
-`[CAPTURE ERROR] ${tabId}`,
+`[CAPTURE FAILED] ${tabId}`,
 
 error
 
@@ -278,9 +386,7 @@ error
 
 
 function stopTabCapture(
-
 tabId
-
 ){
 
 const capture=
@@ -291,6 +397,12 @@ tabId
 
 
 if(!capture){
+
+console.warn(
+
+`[STOP] No session ${tabId}`
+
+);
 
 return;
 
@@ -314,8 +426,24 @@ track.stop()
 
 
 if(
-capture.socket
+
+capture.socket &&
+
+capture.socket.readyState===1
+
 ){
+
+capture.socket.send(
+
+JSON.stringify({
+
+tabId,
+
+closed:true
+
+})
+
+);
 
 capture.socket.close();
 
@@ -328,7 +456,9 @@ tabId
 
 
 console.log(
-`[CAPTURE] Released ${tabId}`
+
+`[CAPTURE RELEASED] ${tabId}`
+
 );
 
 }
@@ -336,6 +466,7 @@ console.log(
 
 
 initializeCaptureEngine();
+
 
 
 window.TabForgeCapture={

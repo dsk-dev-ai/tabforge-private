@@ -1,29 +1,91 @@
 [package]
 name = "desktop-app"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "TabForge Multi-Tab Browser Recording Runtime"
+authors = ["dsk-dev-ai"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "desktop_app_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = [
+    "staticlib",
+    "cdylib",
+    "rlib"
+]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+
+# ==============================
+# TAURI
+# ==============================
+
+tauri = { version = "2", features= [] }
+
 tauri-plugin-opener = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 
-tokio = { version = "1", features= ["full"] }
-tokio-tungstenite = "0.24"
-futures-util = "0.3"
 
+# ==============================
+# SERIALIZATION
+# ==============================
+
+serde = {
+    version="1",
+    features= ["derive"]
+}
+
+serde_json="1"
+
+
+# ==============================
+# ASYNC RUNTIME
+# ==============================
+
+tokio = {
+    version="1",
+    features= [
+        "full"
+    ]
+}
+
+
+# ==============================
+# WEBSOCKET
+# ==============================
+
+tokio-tungstenite="0.24"
+
+futures-util="0.3"
+
+
+# ==============================
+# RANDOM SESSION IDS
+# ==============================
+
+rand="0.8"
+
+
+# ==============================
+# FUTURE:
+# FFMPEG + STREAM PIPELINES
+# ==============================
+
+bytes="1"
+
+uuid= {
+    version="1",
+    features= [
+        "v4"
+    ]
+}
+
+
+# ==============================
+# LOGGING
+# ==============================
+
+log="0.4"
+
+env_logger="0.11"

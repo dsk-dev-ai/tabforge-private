@@ -1,26 +1,18 @@
 use crate::capture::stream::initialize_stream;
 
 use crate::encoder::ffmpeg::initialize_ffmpeg;
-
 use crate::encoder::hardware::initialize_hardware;
 
-use crate::ipc::socket::{
-    initialize_socket_runtime,
-    listen_for_streams,
-    start_websocket_server
-};
+use crate::ipc::socket::{initialize_socket_runtime, listen_for_streams, start_websocket_server};
 
 use crate::workers::pool::initialize_workers;
 
+use tokio::runtime::Runtime;
 
-pub fn initialize_runtime_services(){
-
+pub fn initialize_runtime_services() {
     println!();
 
-    println!(
-        "========== RUNTIME BOOT =========="
-    );
-
+    println!("========== RUNTIME BOOT ==========");
 
     /*
     ---------------------------------
@@ -29,7 +21,6 @@ pub fn initialize_runtime_services(){
     */
 
     initialize_stream();
-
 
     /*
     ---------------------------------
@@ -41,7 +32,6 @@ pub fn initialize_runtime_services(){
 
     initialize_hardware();
 
-
     /*
     ---------------------------------
     WORKER SYSTEM
@@ -49,7 +39,6 @@ pub fn initialize_runtime_services(){
     */
 
     initialize_workers();
-
 
     /*
     ---------------------------------
@@ -59,27 +48,27 @@ pub fn initialize_runtime_services(){
 
     initialize_socket_runtime();
 
-    listen_for_streams();
-
-
     /*
     ---------------------------------
-    WEBSOCKET SERVER
+    TOKIO RUNTIME
     ---------------------------------
     */
 
-    tokio::spawn(
+    let runtime = Runtime::new().expect("Failed to create Tokio runtime");
 
-        async{
+    runtime.spawn(async {
+        listen_for_streams().await;
+    });
 
-            start_websocket_server()
+    runtime.spawn(async {
+        start_websocket_server().await;
+    });
 
-            .await;
+    /*
+    keep runtime alive
+    */
 
-        }
-
-    );
-
+    std::mem::forget(runtime);
 
     /*
     ---------------------------------
@@ -87,34 +76,19 @@ pub fn initialize_runtime_services(){
     ---------------------------------
     */
 
-    println!(
-        "[BOOT] Runtime initialized"
-    );
+    println!("[BOOT] Runtime initialized");
 
-    println!(
-        "[BOOT] Multi-tab recording ready"
-    );
+    println!("[BOOT] Multi-tab recording ready");
 
-    println!(
-        "[BOOT] WebSocket bridge active"
-    );
+    println!("[BOOT] WebSocket bridge active");
 
-    println!(
-        "[BOOT] Real browser ingest enabled"
-    );
+    println!("[BOOT] Real browser ingest enabled");
 
-    println!(
-        "[BOOT] FFmpeg mux pipeline active"
-    );
+    println!("[BOOT] FFmpeg mux pipeline active");
 
-    println!(
-        "[BOOT] Hardware acceleration enabled"
-    );
+    println!("[BOOT] Hardware acceleration enabled");
 
-    println!(
-        "=================================="
-    );
+    println!("==================================");
 
     println!();
-
 }
