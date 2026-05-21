@@ -1,36 +1,13 @@
-use super::audio::{
-    initialize_audio
-};
+use super::audio::initialize_audio;
+use super::router::initialize_router;
+use super::video::initialize_video;
 
-use super::video::{
-    initialize_video
-};
+pub fn initialize_stream() {
+    println!("[CAPTURE] Stream engine online");
 
-use super::router::{
-    initialize_router
-};
+    initialize_audio();
 
-pub fn initialize_stream(){
+    initialize_video();
 
-    println!(
-        "[CAPTURE] Stream engine online"
-    );
-
-    let _audio=
-        initialize_audio();
-
-    let _video=
-        initialize_video();
-
-    let _router=
-        initialize_router();
-
-    println!(
-        "[CAPTURE] Multi-tab pipeline active"
-    );
-
-    println!(
-        "[CAPTURE] Audio/video sync enabled"
-    );
-
+    initialize_router();
 }

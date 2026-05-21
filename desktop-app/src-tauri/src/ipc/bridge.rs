@@ -1,229 +1,104 @@
 use crate::models::tab::BrowserTab;
+
 use crate::recorder::session::RecordingSession;
 
-const WIDTH:u32=1920;
-const HEIGHT:u32=1080;
-const FPS:u32=60;
+#[derive(Debug, Clone)]
 
-const AUDIO_BITRATE:u32=320;
-const VIDEO_BITRATE:u32=8000;
+pub struct TabData {
+    pub id: String,
 
+    pub title: String,
 
-#[derive(
-    Debug,
-    Clone
-)]
-
-pub struct TabData{
-
-    pub id:String,
-
-    pub title:String,
-
-    pub url:String
+    pub url: String,
 }
 
+#[derive(Debug, Clone)]
 
-#[derive(Debug)]
+pub struct TabPayload {
+    pub selected_tabs: Vec<TabData>,
 
-pub struct TabPayload{
-
-    pub selected_tabs:
-        Vec<TabData>,
-
-    pub timestamp:u64
+    pub timestamp: u64,
 }
 
+fn create_browser_tab(tab: &TabData) -> BrowserTab {
+    BrowserTab {
+        id: tab.id.clone(),
 
+        title: tab.title.clone(),
 
-pub fn receive_tabs(
-    payload:TabPayload
-)->Vec<RecordingSession>{
+        url: tab.url.clone(),
 
+        width: 1920,
+
+        height: 1080,
+
+        fps: 60,
+    }
+}
+
+fn create_output_filename(title: &str) -> String {
+    let safe_name = title
+        .to_lowercase()
+        .replace(" ", "_")
+        .replace("/", "_")
+        .replace("\\", "_")
+        .replace(":", "_");
+
+    format!("{}_1080p.mp4", safe_name)
+}
+
+fn create_recording_session(browser_tab: BrowserTab) -> RecordingSession {
+    let filename = create_output_filename(&browser_tab.title);
+
+    RecordingSession {
+        tab: browser_tab,
+
+        output_file: filename,
+
+        recording: false,
+
+        audio_enabled: true,
+
+        video_enabled: true,
+
+        hardware_encoding: true,
+
+        separate_audio: true,
+
+        fps: 60,
+    }
+}
+
+pub fn receive_tabs(payload: TabPayload) -> Vec<RecordingSession> {
     println!();
 
-    println!(
-        "===== EXTENSION PAYLOAD ====="
-    );
+    println!("===== EXTENSION PAYLOAD =====");
 
-    let mut sessions=
-        Vec::new();
+    let mut sessions = Vec::new();
 
+    for tab in payload.selected_tabs {
+        println!("[{}]", tab.id);
 
-    for tab in payload.selected_tabs{
+        println!("Title: {}", tab.title);
 
-        print_tab(
-            &tab
-        );
+        println!("URL: {}", tab.url);
 
-        let session=
-            create_session(
-                &tab
-            );
+        let browser_tab = create_browser_tab(&tab);
 
-        println!(
-            "Session created"
-        );
+        let session = create_recording_session(browser_tab);
 
-        println!(
-            "----------------"
-        );
+        println!("Session created");
 
-        sessions.push(
-            session
-        );
+        println!("----------------");
+
+        sessions.push(session);
     }
 
+    println!("Timestamp: {}", payload.timestamp);
 
-    println!(
-        "Timestamp: {}",
-        payload.timestamp
-    );
-
-    println!(
-        "============================="
-    );
+    println!("=============================");
 
     println!();
 
     sessions
-}
-
-
-
-fn create_session(
-
-    tab:&TabData
-
-)->RecordingSession{
-
-
-    let browser_tab=
-
-    BrowserTab{
-
-        id:
-            tab.id.clone(),
-
-        title:
-            tab.title.clone(),
-
-        url:
-            tab.url.clone(),
-
-        width:
-            WIDTH,
-
-        height:
-            HEIGHT,
-
-        fps:
-            FPS,
-
-        browser:
-            "Chrome"
-            .to_string(),
-
-        active:
-            true,
-
-        audio_available:
-            true,
-
-        stream_type:
-            "video/webm"
-            .to_string()
-    };
-
-
-    RecordingSession{
-
-        tab:
-            browser_tab,
-
-        output_file:
-            create_filename(
-                &tab.title
-            ),
-
-        recording:
-            false,
-
-        fps:
-            FPS,
-
-        audio_enabled:
-            true,
-
-        video_enabled:
-            true,
-
-        separate_audio:
-            true,
-
-        hardware_encoding:
-            true,
-
-        audio_bitrate:
-            AUDIO_BITRATE,
-
-        video_bitrate:
-            VIDEO_BITRATE,
-
-        worker_id:
-            None,
-
-        stream_connected:
-            false
-    }
-
-}
-
-
-
-fn create_filename(
-    title:&str
-)->String{
-
-    format!(
-        "{}_1080p.mp4",
-
-        title
-
-        .to_lowercase()
-
-        .replace(
-            " ",
-            "_"
-        )
-
-        .replace(
-            "/",
-            "_"
-        )
-    )
-
-}
-
-
-
-fn print_tab(
-    tab:&TabData
-){
-
-    println!(
-        "[{}]",
-        tab.id
-    );
-
-    println!(
-        "Title: {}",
-        tab.title
-    );
-
-    println!(
-        "URL: {}",
-        tab.url
-    );
-
 }

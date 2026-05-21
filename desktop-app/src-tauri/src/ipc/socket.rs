@@ -1,268 +1,145 @@
 use std::collections::HashMap;
-use std::sync::{Arc,Mutex};
+
+use std::sync::{Arc, Mutex};
+
 use std::thread;
-use std::time::{
-    Duration,
-    SystemTime,
-    UNIX_EPOCH
-};
 
-use crate::encoder::ffmpeg::{
-    create_muxer,
-    write_chunk
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-const SIMULATION_MODE:bool=true;
+use crate::encoder::ffmpeg::{create_muxer, write_chunk};
 
-const CHUNK_SIZE:usize=4096;
+const SIMULATION_MODE: bool = false;
 
-const INTERVAL:u64=3;
+#[derive(Debug, Clone)]
 
+pub struct SocketMessage {
+    pub tab_id: String,
 
-#[derive(Debug,Clone)]
+    pub payload: Vec<u8>,
 
-pub struct SocketMessage{
+    pub timestamp: u64,
 
-    pub tab_id:String,
+    pub stream_type: String,
 
-    pub payload_size:usize,
-
-    pub timestamp:u64,
-
-    pub chunk_index:u64,
-
-    pub stream_type:String,
-
-    pub stream_active:bool
+    pub chunk_index: u64,
 }
 
+#[derive(Debug, Default)]
 
-#[derive(Debug,Default)]
+pub struct StreamSession {
+    pub total_bytes: usize,
 
-pub struct StreamStats{
+    pub chunks: u64,
 
-    pub total_bytes:usize,
-
-    pub total_chunks:u64,
-
-    pub started:bool
+    pub active: bool,
 }
 
+pub fn initialize_socket_runtime() {
+    println!("[IPC] Socket initialized");
 
-pub fn initialize_socket_runtime(){
+    println!("[IPC] WebSocket online");
 
-    println!(
-        "[IPC] Socket initialized"
-    );
+    println!("[IPC] Binary mode enabled");
 
-    println!(
-        "[IPC] WebSocket online"
-    );
+    println!("[IPC] Multi-tab routing enabled");
 
-    println!(
-        "[IPC] Binary mode enabled"
-    );
-
-    println!(
-        "[IPC] Simulation: {}",
-        SIMULATION_MODE
-    );
+    println!("[IPC] Real browser ingest mode");
 }
 
+pub fn listen_for_streams() {
+    println!("[IPC] Listening...");
 
+    let sessions = Arc::new(Mutex::new(HashMap::<String, StreamSession>::new()));
 
-pub fn listen_for_streams(){
+    if SIMULATION_MODE {
+        println!("[IPC] Simulation enabled");
 
-    println!(
-        "[IPC] Listening..."
-    );
+        thread::spawn({
+            let sessions = Arc::clone(&sessions);
 
-    if !SIMULATION_MODE{
+            move || {
+                let mut chunk = 0;
 
-        println!(
-            "[IPC] Waiting extension connection"
-        );
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
 
-        return;
-    }
-
-
-    let stats=
-
-    Arc::new(
-
-        Mutex::new(
-
-            HashMap::<
-                String,
-                StreamStats
-            >::new()
-
-        )
-    );
-
-
-    thread::spawn({
-
-        let stream_stats=
-            Arc::clone(
-                &stats
-            );
-
-        move||{
-
-            let tabs=vec![
-
-                "tab_001",
-
-                "tab_002",
-
-                "tab_003"
-            ];
-
-            let mut chunk=0;
-
-
-            loop{
-
-                thread::sleep(
-
-                    Duration::from_secs(
-                        INTERVAL
-                    )
-                );
-
-                chunk+=1;
-
-                for tab in &tabs{
+                    chunk += 1;
 
                     process_stream_chunk(
+                        SocketMessage {
+                            tab_id: "tab_001".to_string(),
 
-                        SocketMessage{
+                            payload: vec![0; 4096],
 
-                            tab_id:
-                            tab.to_string(),
+                            timestamp: current_timestamp(),
 
-                            payload_size:
-                            CHUNK_SIZE,
+                            stream_type: "video/webm".to_string(),
 
-                            timestamp:
-                            timestamp(),
-
-                            chunk_index:
-                            chunk,
-
-                            stream_type:
-                            "video/webm"
-                            .to_string(),
-
-                            stream_active:
-                            true
-
+                            chunk_index: chunk,
                         },
-
-                        &stream_stats
+                        &sessions,
                     );
                 }
             }
-        }
-    });
+        });
+    } else {
+        println!("[IPC] Awaiting browser extension...");
+
+        println!("[IPC] ws://127.0.0.1:8765");
+    }
 }
 
+pub fn process_stream_chunk(
+    message: SocketMessage,
 
+    sessions: &Arc<Mutex<HashMap<String, StreamSession>>>,
+) {
+    let mut store = sessions.lock().unwrap();
 
-fn process_stream_chunk(
+    let state = store.entry(message.tab_id.clone()).or_default();
 
-message:SocketMessage,
+    state.active = true;
 
-stats:
-&Arc<
-Mutex<
-HashMap<
-String,
-StreamStats
->
->
->
+    state.chunks += 1;
 
-){
+    state.total_bytes += message.payload.len();
 
-let mut map=
-stats.lock().unwrap();
+    if state.chunks == 1 {
+        let output = format!("recordings/{}.mp4", message.tab_id);
 
+        create_muxer(&message.tab_id, &output);
+    }
 
-let session=
+    write_chunk(&message.tab_id, message.payload.len());
 
-map.entry(
-message.tab_id.clone()
-)
+    if state.chunks % 10 == 0 {
+        println!();
 
-.or_default();
+        println!("[STREAM] {}", message.tab_id);
 
+        println!("Chunks: {}", state.chunks);
 
-session.total_bytes+=
-message.payload_size;
+        println!("Bytes: {} KB", state.total_bytes / 1024);
 
-session.total_chunks+=1;
+        println!("Timestamp: {}", message.timestamp);
 
-
-if !session.started{
-
-session.started=true;
-
-create_muxer(
-
-&message.tab_id,
-
-&format!(
-"recordings/{}.mp4",
-message.tab_id
-)
-
-);
-
+        println!("-------------");
+    }
 }
 
+#[allow(dead_code)]
 
-write_chunk(
+pub fn send_message(message: SocketMessage) {
+    println!("[IPC OUTBOUND]");
 
-&message.tab_id,
+    println!("Tab: {}", message.tab_id);
 
-message.payload_size
-
-);
-
-
-if message.chunk_index %10==0{
-
-println!(
-
-"[STREAM] {} | chunks={} | total={}KB",
-
-message.tab_id,
-
-session.total_chunks,
-
-session.total_bytes/1024
-
-);
-
+    println!("Bytes: {}", message.payload.len());
 }
 
-}
-
-
-
-fn timestamp()->u64{
-
-SystemTime::now()
-
-.duration_since(
-UNIX_EPOCH
-)
-
-.unwrap()
-
-.as_secs()
-
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }

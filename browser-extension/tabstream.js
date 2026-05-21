@@ -1,22 +1,62 @@
-function sendTabsToTabForge(tabIds){
+function sendTabsToTabForge(
 
-    console.log(
-        "Sending tabs:",
-        tabIds
-    );
+tabs
 
-    const payload = {
+){
 
-        selectedTabs: tabIds,
+console.log(
+"[BRIDGE]"
+);
 
-        timestamp:
-            Date.now()
+console.log(
+tabs
+);
 
-    };
 
-    console.log(payload);
+const payload={
+
+selected_tabs:
+
+tabs.map(
+
+tab=>({
+
+id:
+tab.id,
+
+title:
+tab.title,
+
+url:
+tab.url
+
+})
+
+),
+
+timestamp:
+Date.now()
+
+};
+
+
+console.log(
+payload
+);
+
+
+chrome.runtime.sendMessage({
+
+action:
+"TAB_PAYLOAD",
+
+payload
+
+});
 
 }
 
-window.sendTabsToTabForge =
-    sendTabsToTabForge;
+
+window.sendTabsToTabForge=
+
+sendTabsToTabForge;

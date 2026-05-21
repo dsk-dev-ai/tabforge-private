@@ -1,19 +1,87 @@
-chrome.runtime.onInstalled.addListener(() => {
-    console.log("TabForge Bridge initialized");
-});
+chrome.runtime.onInstalled.addListener(()=>{
 
-chrome.tabs.onActivated.addListener(async (activeInfo) => {
-
-    const tab = await chrome.tabs.get(
-        activeInfo.tabId
-    );
-
-    console.log("Active Tab:");
-
-    console.log({
-        id: tab.id,
-        title: tab.title,
-        url: tab.url
-    });
+console.log(
+"[TABFORGE] Extension initialized"
+);
 
 });
+
+
+chrome.runtime.onMessage.addListener(
+
+async(
+
+message,
+
+sender,
+
+sendResponse
+
+)=>{
+
+
+if(
+
+message.action===
+
+"START_CAPTURE"
+
+){
+
+try{
+
+await window
+.TabForgeCapture
+.startTabCapture(
+
+message.tabId
+
+);
+
+
+sendResponse({
+
+success:true
+
+});
+
+}
+catch(e){
+
+sendResponse({
+
+success:false,
+
+error:e.toString()
+
+});
+
+}
+
+}
+
+
+if(
+
+message.action===
+
+"STOP_CAPTURE"
+
+){
+
+window
+.TabForgeCapture
+.stopTabCapture(
+
+message.tabId
+
+);
+
+}
+
+
+return true;
+
+}
+
+);
