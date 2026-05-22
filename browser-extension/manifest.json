@@ -5,9 +5,9 @@
 
   "short_name": "TabForge",
 
-  "version": "1.2.0",
+  "version": "1.3.0",
 
-  "description": "Multi-tab browser recording engine with WebSocket streaming and Rust desktop runtime.",
+  "description": "Multi-tab browser recording engine with native tab capture and Rust desktop runtime.",
 
   "minimum_chrome_version": "110",
 
@@ -27,37 +27,24 @@
   ],
 
   "background": {
-
-    "service_worker":"background.js",
-
-    "type":"module"
-
+    "service_worker": "background.js",
+    "type": "module"
   },
 
-  "action":{
-
+  "action": {
     "default_popup":"popup.html",
-
     "default_title":"TabForge Runtime",
 
     "default_icon":{
-
       "16":"icons/icon16.png",
-
       "32":"icons/icon32.png",
-
       "48":"icons/icon48.png",
-
       "128":"icons/icon128.png"
-
     }
-
   },
 
   "content_scripts":[
-
     {
-
       "matches":[
         "<all_urls>"
       ],
@@ -68,27 +55,20 @@
       ],
 
       "run_at":"document_idle"
-
     }
-
   ],
 
   "web_accessible_resources":[
-
     {
-
       "resources":[
-
+        "capture.js",
         "tabstream.js"
-
       ],
 
       "matches":[
         "<all_urls>"
       ]
-
     }
-
   ],
 
   "commands":{
@@ -96,25 +76,19 @@
     "start_capture":{
 
       "suggested_key":{
-
         "default":"Ctrl+Shift+S"
-
       },
 
       "description":"Start recording"
-
     },
 
     "stop_capture":{
 
       "suggested_key":{
-
         "default":"Ctrl+Shift+X"
-
       },
 
       "description":"Stop recording"
-
     }
 
   },

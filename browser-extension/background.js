@@ -1,33 +1,34 @@
 // ====================================================
-// TabForge Background Runtime v2.0
-// Extension → Runtime → Capture Engine
-// Production Multi-Tab Runtime
+// TabForge Background Runtime v3.0
+// Native Capture Controller
+// Phase A tabcapture-native
 // ====================================================
 
-(() => {
+(()=>{
 
 console.log(
-"[TABFORGE] Background runtime booting"
+"[TABFORGE BG] Boot"
 );
 
 
 // =====================================
-// GLOBAL STATE
+// STATE
 // =====================================
 
 globalThis.__TABFORGE_BG__ ??= {
 
-injectedTabs:new Set(),
+injected:new Set(),
 
-activeCaptures:new Map(),
-
-heartbeat:new Map(),
+active:new Map(),
 
 metrics:{
 
 starts:0,
+
 stops:0,
+
 injects:0,
+
 errors:0
 
 }
@@ -38,6 +39,52 @@ const STATE=
 globalThis.__TABFORGE_BG__;
 
 
+
+// =====================================
+// HELPERS
+// =====================================
+
+function id(){
+
+return crypto.randomUUID();
+
+}
+
+
+function blocked(url){
+
+if(!url){
+
+return true;
+
+}
+
+return [
+
+"chrome://",
+
+"edge://",
+
+"devtools://",
+
+"chrome-extension://",
+
+"view-source:",
+
+"about:"
+
+]
+
+.some(
+
+v=>url.startsWith(v)
+
+);
+
+}
+
+
+
 // =====================================
 // INSTALL
 // =====================================
@@ -45,126 +92,26 @@ globalThis.__TABFORGE_BG__;
 chrome.runtime.onInstalled.addListener(()=>{
 
 console.log(
-"[TABFORGE] Installed"
+"[INSTALLED]"
 );
 
 });
 
 
+
 // =====================================
-// VALIDATOR
+// INJECT
 // =====================================
 
-function validTab(tab){
+async function inject(tabId){
 
 if(
-!tab ||
-!tab.url
-){
-
-return false;
-
-}
-
-
-const blocked=[
-
-"chrome://",
-"edge://",
-"devtools://",
-"chrome-extension://",
-"about:",
-"view-source:"
-
-];
-
-
-return !blocked.some(
-
-prefix=>
-
-tab.url.startsWith(
-prefix
-)
-
-);
-
-}
-
-
-
-// =====================================
-// HEARTBEAT
-// =====================================
-
-function startHeartbeat(tabId){
-
-stopHeartbeat(
-tabId
-);
-
-const id=
-
-setInterval(()=>{
-
-console.log(
-`[HEARTBEAT] ${tabId}`
-);
-
-},15000);
-
-
-STATE.heartbeat.set(
-tabId,
-id
-);
-
-}
-
-
-function stopHeartbeat(tabId){
-
-const timer=
-
-STATE.heartbeat.get(
-tabId
-);
-
-if(timer){
-
-clearInterval(
-timer
-);
-
-}
-
-
-STATE.heartbeat.delete(
-tabId
-);
-
-}
-
-
-
-// =====================================
-// INJECT RUNTIME
-// =====================================
-
-async function injectRuntime(tabId){
-
-if(
-
-STATE
-.injectedTabs
-.has(tabId)
-
+STATE.injected.has(tabId)
 ){
 
 return true;
 
 }
-
 
 try{
 
@@ -181,43 +128,27 @@ files:[
 });
 
 
-STATE
-.injectedTabs
-.add(
+STATE.injected.add(
 tabId
 );
 
-
-STATE
-.metrics
-.injects++;
+STATE.metrics.injects++;
 
 
 console.log(
-
 `[INJECTED] ${tabId}`
-
 );
-
 
 return true;
 
 }
 catch(error){
 
-STATE
-.metrics
-.errors++;
+STATE.metrics.errors++;
 
-
-console.warn(
-
-`[INJECT FAIL] ${tabId}`,
-
+console.error(
 error
-
 );
-
 
 return false;
 
@@ -228,7 +159,7 @@ return false;
 
 
 // =====================================
-// AUTO INJECTION
+// AUTO
 // =====================================
 
 chrome.tabs.onUpdated.addListener(
@@ -247,17 +178,15 @@ return;
 
 }
 
-
 if(
-!validTab(tab)
+blocked(tab?.url)
 ){
 
 return;
 
 }
 
-
-await injectRuntime(
+await inject(
 tabId
 );
 
@@ -268,59 +197,23 @@ tabId
 
 
 // =====================================
-// TAB RELOAD
-// =====================================
-
-chrome.tabs.onReplaced.addListener(
-
-(newId,oldId)=>{
-
-STATE
-.injectedTabs
-.delete(
-oldId
-);
-
-STATE
-.activeCaptures
-.delete(
-oldId
-);
-
-}
-
-);
-
-
-
-// =====================================
-// TAB CLOSED
+// CLEANUP
 // =====================================
 
 chrome.tabs.onRemoved.addListener(
 
-(tabId)=>{
+tabId=>{
 
-stopHeartbeat(
+STATE.injected.delete(
 tabId
 );
 
-
-STATE
-.injectedTabs
-.delete(
+STATE.active.delete(
 tabId
 );
-
-STATE
-.activeCaptures
-.delete(
-tabId
-);
-
 
 console.log(
-`[TAB CLOSED] ${tabId}`
+`[REMOVED] ${tabId}`
 );
 
 }
@@ -330,84 +223,91 @@ console.log(
 
 
 // =====================================
-// MESSAGE ROUTER
+// HOTKEYS
 // =====================================
 
-chrome.runtime.onMessage.addListener(
+chrome.commands.onCommand.addListener(
 
-async(
-message,
-sender,
-sendResponse
-)=>{
+async(command)=>{
 
-try{
+const [tab]=
 
+await chrome.tabs.query({
 
-// =================================
-// START
-// =================================
+active:true,
 
-if(
-
-message.action===
-"START_CAPTURE"
-
-){
-
-const tabId=
-Number(
-message.tabId
-);
-
-
-if(
-
-STATE
-.activeCaptures
-.has(tabId)
-
-){
-
-console.warn(
-
-`[ACTIVE] ${tabId}`
-
-);
-
-
-sendResponse({
-
-success:true,
-
-active:true
+currentWindow:true
 
 });
 
-return true;
+
+if(!tab?.id){
+
+return;
 
 }
 
 
-console.log(
-`[START] ${tabId}`
+if(
+
+command==="start_capture"
+
+){
+
+startCapture(
+tab.id
 );
 
+}
 
-const ready=
 
-await injectRuntime(
+if(
+
+command==="stop_capture"
+
+){
+
+stopCapture(
+tab.id
+);
+
+}
+
+});
+
+
+
+// =====================================
+// START
+// =====================================
+
+async function startCapture(tabId){
+
+try{
+
+if(
+STATE.active.has(tabId)
+){
+
+return;
+}
+
+
+const ok=
+
+await inject(
 tabId
 );
 
+if(!ok){
 
-if(!ready){
-
-throw new Error(
-"runtime injection failed"
-);
+return;
 
 }
+
+
+const sessionId=
+id();
 
 
 await chrome.scripting.executeScript({
@@ -421,25 +321,25 @@ func:(tabId)=>{
 globalThis
 .TabForgeCapture
 ?.startTabCapture(
-String(tabId)
+tabId
 );
 
 },
 
 args:[
-tabId
+String(tabId)
 ]
 
 });
 
 
-STATE
-.activeCaptures
-.set(
+STATE.active.set(
 
 tabId,
 
 {
+
+sessionId,
 
 started:
 Date.now()
@@ -449,47 +349,37 @@ Date.now()
 );
 
 
-STATE
-.metrics
-.starts++;
+STATE.metrics.starts++;
 
 
-startHeartbeat(
-tabId
+console.log(
+
+`[STARTED] ${tabId}`
+
 );
 
+}
+catch(error){
 
-sendResponse({
+STATE.metrics.errors++;
 
-success:true
+console.error(
+error
+);
 
-});
+}
 
 }
 
 
 
-// =================================
+// =====================================
 // STOP
-// =================================
+// =====================================
 
-if(
+async function stopCapture(tabId){
 
-message.action===
-"STOP_CAPTURE"
-
-){
-
-const tabId=
-Number(
-message.tabId
-);
-
-
-console.log(
-`[STOP] ${tabId}`
-);
-
+try{
 
 await chrome.scripting.executeScript({
 
@@ -502,33 +392,70 @@ func:(tabId)=>{
 globalThis
 .TabForgeCapture
 ?.stopTabCapture(
-String(tabId)
+tabId
 );
 
 },
 
 args:[
-tabId
+String(tabId)
 ]
 
 });
 
 
-STATE
-.activeCaptures
-.delete(
+STATE.active.delete(
 tabId
 );
 
+STATE.metrics.stops++;
 
-stopHeartbeat(
-tabId
+
+console.log(
+
+`[STOPPED] ${tabId}`
+
 );
 
+}
+catch(error){
 
-STATE
-.metrics
-.stops++;
+STATE.metrics.errors++;
+
+}
+
+}
+
+
+
+// =====================================
+// ROUTER
+// =====================================
+
+chrome.runtime.onMessage.addListener(
+
+async(
+message,
+sender,
+sendResponse
+)=>{
+
+try{
+
+
+if(
+
+message.action==="START_CAPTURE"
+
+){
+
+await startCapture(
+
+Number(
+message.tabId
+)
+
+);
 
 
 sendResponse({
@@ -541,52 +468,58 @@ success:true
 
 
 
-// =================================
-// STATUS
-// =================================
-
 if(
 
-message.action===
-"RUNTIME_STATS"
+message.action==="STOP_CAPTURE"
 
 ){
 
+await stopCapture(
+
+Number(
+message.tabId
+)
+
+);
+
+
 sendResponse({
 
-metrics:
-STATE.metrics,
-
-active:
-
-[
-...STATE
-.activeCaptures
-.keys()
-
-]
+success:true
 
 });
 
 }
 
 
+
+if(
+
+message.action==="RUNTIME_STATS"
+
+){
+
+sendResponse({
+
+active:
+
+[
+
+...STATE
+.active
+.keys()
+
+],
+
+metrics:
+STATE.metrics
+
+});
+
+}
+
 }
 catch(error){
-
-STATE
-.metrics
-.errors++;
-
-
-console.error(
-
-"[BACKGROUND ERROR]",
-
-error
-
-);
-
 
 sendResponse({
 
@@ -599,7 +532,6 @@ error.toString()
 
 }
 
-
 return true;
 
 }
@@ -607,9 +539,8 @@ return true;
 );
 
 
-
 console.log(
-"[TABFORGE] Background ready"
+"[TABFORGE BG READY]"
 );
 
 })();
