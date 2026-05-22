@@ -1,35 +1,38 @@
 // ====================================================
-// TabForge Popup Runtime v6.0
-// Native Session Dashboard
-// Phase B2 Stable
+// TabForge Popup Runtime v7
+// MV3 Stable Dashboard
 // ====================================================
 
-(()=>{
+(() => {
 
-console.log(
-"[TABFORGE POPUP] PhaseB2 Stable Boot"
-);
+if(window.__TABFORGE_POPUP__LOADED__){
+
+console.log("[POPUP] already loaded");
+
+return;
+
+}
+
+window.__TABFORGE_POPUP__LOADED__=true;
+
+console.log("[POPUP] boot");
 
 
 // =====================================
 // STATE
 // =====================================
 
-globalThis.__TABFORGE_POPUP__ ??= {
+const STATE={
 
 selected:new Set(),
 
 tabs:[],
 
-runtime:null,
+runtime:{},
 
 poller:null
 
 };
-
-const STATE=
-globalThis.__TABFORGE_POPUP__;
-
 
 
 // =====================================
@@ -38,11 +41,7 @@ globalThis.__TABFORGE_POPUP__;
 
 function blocked(url){
 
-if(!url){
-
-return true;
-
-}
+if(!url)return true;
 
 return [
 
@@ -53,83 +52,206 @@ return [
 "about:",
 "view-source:"
 
-]
-
-.some(
-
-v=>url.startsWith(v)
-
-);
+].some(v=>url.startsWith(v));
 
 }
 
 
-function createButton(text){
+function send(message){
 
-const b=
+return new Promise(resolve=>{
 
-document.createElement(
-"button"
+try{
+
+chrome.runtime.sendMessage(
+
+message,
+
+response=>{
+
+if(
+
+chrome.runtime.lastError
+
+){
+
+console.warn(
+
+"[SEND ERROR]",
+
+chrome.runtime.lastError.message
+
 );
 
-b.innerText=
-text;
+resolve(null);
+
+return;
+
+}
+
+resolve(response);
+
+}
+
+);
+
+}
+catch(e){
+
+console.error(e);
+
+resolve(null);
+
+}
+
+});
+
+}
+
+
+function btn(text,className){
+
+const b=document.createElement("button");
+
+b.innerText=text;
+
+b.className=className;
 
 return b;
 
 }
 
 
-
 // =====================================
-// LOAD
+// LOAD TABS
 // =====================================
 
 async function loadTabs(){
-
-try{
 
 const tabs=
 
 await chrome.tabs.query({});
 
+STATE.tabs=tabs.filter(
 
-STATE.tabs=
+t=>
 
-tabs.filter(
+t.id &&
 
-tab=>
+t.url &&
 
-tab.id &&
-tab.url &&
-tab.title &&
-!blocked(tab.url)
+!blocked(t.url)
 
 );
 
+render();
 
-render(
-STATE.tabs
-);
-
-
-document
-.getElementById(
-"count"
-)
-
-.innerText=
-
-`${STATE.tabs.length} tabs`;
+updateStats();
 
 }
-catch(error){
+
+
+// =====================================
+// START
+// =====================================
+
+async function startCapture(tabId){
+
+const result=
+
+await send({
+
+action:"START_CAPTURE",
+
+tabId
+
+});
+
+
+if(
+
+!result?.success
+
+){
 
 showError(
-error
+
+result?.error ||
+
+"start failed"
+
+);
+
+return;
+
+}
+
+STATE.selected.add(tabId);
+
+render();
+
+updateStats();
+
+console.log(
+
+"[START]",
+
+tabId
+
 );
 
 }
+
+
+
+// =====================================
+// STOP
+// =====================================
+
+async function stopCapture(tabId){
+
+const result=
+
+await send({
+
+action:"STOP_CAPTURE",
+
+tabId
+
+});
+
+
+if(
+
+!result?.success
+
+){
+
+showError(
+
+result?.error ||
+
+"stop failed"
+
+);
+
+return;
+
+}
+
+STATE.selected.delete(tabId);
+
+render();
+
+updateStats();
+
+console.log(
+
+"[STOP]",
+
+tabId
+
+);
 
 }
 
@@ -143,246 +265,96 @@ function card(tab){
 
 const root=
 
-document.createElement(
-"div"
-);
+document.createElement("div");
 
-root.className=
-"tabCard";
-
-
-
-const top=
-
-document.createElement(
-"div"
-);
-
-top.style.display=
-"flex";
-
-top.style.alignItems=
-"center";
-
-
-
-const icon=
-
-document.createElement(
-"img"
-);
-
-icon.width=16;
-
-icon.height=16;
-
-icon.style.marginRight=
-"8px";
-
-icon.src=
-
-tab.favIconUrl ||
-
-"icons/icon16.png";
-
+root.className="tabCard";
 
 
 const title=
 
-document.createElement(
-"div"
-);
+document.createElement("div");
 
-title.className=
-"title";
+title.className="title";
 
 title.innerText=
 
-tab.title.slice(
-0,
-50
-);
+tab.title.slice(0,60);
 
-
-
-const badge=
-
-document.createElement(
-"span"
-);
-
-badge.style.marginLeft=
-"auto";
-
-badge.style.fontSize=
-"10px";
-
-
-if(
-STATE.selected.has(tab.id)
-){
-
-badge.innerText=
-"● LIVE";
-
-badge.style.color=
-"#4ade80";
-
-}
-else{
-
-badge.innerText=
-"NATIVE";
-
-badge.style.opacity=
-".6";
-
-}
-
-
-
-top.appendChild(
-icon
-);
-
-top.appendChild(
-title
-);
-
-top.appendChild(
-badge
-);
-
-
-
-// URL
 
 const url=
 
-document.createElement(
-"div"
-);
+document.createElement("div");
 
-url.className=
-"url";
+url.className="url";
 
-url.innerText=
-tab.url;
+url.innerText=tab.url;
 
-
-
-const sid=
-
-document.createElement(
-"div"
-);
-
-sid.className=
-"url";
-
-sid.innerText=
-
-`tab:${tab.id}`;
-
-
-
-// controls
 
 const controls=
 
-document.createElement(
-"div"
-);
+document.createElement("div");
 
-controls.className=
-"controls";
+controls.className="controls";
+
+
+const live=
+
+STATE.selected.has(tab.id);
 
 
 const start=
 
-createButton(
-"Start"
-);
+btn("Start","start");
 
 const stop=
 
-createButton(
-"Stop"
+btn("Stop","stop");
+
+
+start.disabled=live;
+
+stop.disabled=!live;
+
+
+start.addEventListener(
+
+"click",
+
+()=>startCapture(tab.id)
+
 );
 
 
+stop.addEventListener(
 
-if(
-STATE.selected.has(tab.id)
-){
+"click",
 
-start.disabled=true;
+()=>stopCapture(tab.id)
 
-stop.disabled=false;
-
-}
-else{
-
-start.disabled=false;
-
-stop.disabled=true;
-
-}
-
-
-
-start.onclick=
-
-()=>startCapture(
-tab,
-start
 );
 
 
-stop.onclick=
+controls.append(
 
-()=>stopCapture(
-tab,
+start,
+
 stop
+
 );
 
 
+root.append(
 
-controls.appendChild(
-start
-);
+title,
 
-controls.appendChild(
-stop
-);
+url,
 
-
-
-root.appendChild(
-top
-);
-
-root.appendChild(
-url
-);
-
-root.appendChild(
-sid
-);
-
-root.appendChild(
 controls
+
 );
 
 
-document
-.getElementById(
-"tabs"
-)
-
-.appendChild(
-root
-);
+return root;
 
 }
 
@@ -392,19 +364,31 @@ root
 // RENDER
 // =====================================
 
-function render(tabs){
+function render(){
 
-const container=
+const tabs=
 
 document.getElementById(
+
 "tabs"
+
 );
 
-container.innerHTML="";
+tabs.innerHTML="";
 
 
-tabs.forEach(
-card
+STATE.tabs.forEach(
+
+tab=>{
+
+tabs.appendChild(
+
+card(tab)
+
+);
+
+}
+
 );
 
 }
@@ -412,156 +396,96 @@ card
 
 
 // =====================================
-// START
+// STATS
 // =====================================
 
-function startCapture(
+function updateStats(){
 
-tab,
-buttonEl
+document
+.getElementById(
+"count"
+)
 
-){
+.innerText=
 
-if(
-STATE.selected.has(tab.id)
-){
+STATE.tabs.length;
 
-return;
+
+document
+.getElementById(
+"status"
+)
+
+.innerText=
+
+STATE.selected.size;
+
+
+document
+.getElementById(
+"runtimeCount"
+)
+
+.innerText=
+
+STATE.runtime
+.active?.length || 0;
 
 }
 
 
-buttonEl.disabled=true;
 
+// =====================================
+// POLL
+// =====================================
 
-chrome.runtime.sendMessage(
+async function poll(){
 
-{
+const result=
+
+await send({
 
 action:
-"START_CAPTURE",
+"RUNTIME_STATS"
 
-tabId:
-tab.id
-
-},
-
-response=>{
+});
 
 
-if(
-!response?.success
-){
-
-buttonEl.disabled=
-false;
-
-showError(
-response?.error
-);
+if(!result){
 
 return;
 
 }
 
 
-STATE.selected.add(
-tab.id
-);
+STATE.runtime=result;
 
 
-update();
+STATE.selected=
 
-render(
-STATE.tabs
-);
+new Set(
 
-
-console.log(
-
-"[STARTED]",
-
-tab.id
+result.active||[]
 
 );
 
-}
 
-);
+updateStats();
+
+render();
 
 }
 
 
+STATE.poller=
 
-// =====================================
-// STOP
-// =====================================
+setInterval(
 
-function stopCapture(
+poll,
 
-tab,
-buttonEl
-
-){
-
-chrome.runtime.sendMessage(
-
-{
-
-action:
-"STOP_CAPTURE",
-
-tabId:
-tab.id
-
-},
-
-response=>{
-
-
-if(
-!response?.success
-){
-
-showError(
-response?.error
-);
-
-return;
-
-}
-
-
-STATE.selected.delete(
-tab.id
-);
-
-
-buttonEl.disabled=
-false;
-
-
-update();
-
-render(
-STATE.tabs
-);
-
-
-console.log(
-
-"[STOPPED]",
-
-tab.id
+3000
 
 );
-
-}
-
-);
-
-}
-
 
 
 // =====================================
@@ -585,146 +509,78 @@ e.target.value
 .toLowerCase();
 
 
-const filtered=
+STATE.tabs=
 
 STATE.tabs.filter(
 
-tab=>
+t=>
 
-tab.title
+t.title
 .toLowerCase()
 .includes(q)
 
 ||
 
-tab.url
+t.url
 .toLowerCase()
 .includes(q)
 
 );
 
 
-render(
-filtered
-);
+render();
 
 }
 
 );
 
 
-
 // =====================================
-// UPDATE
+// REFRESH
 // =====================================
-
-function update(){
 
 document
 .getElementById(
-"status"
+"refreshBtn"
 )
 
-.innerText=
+?.addEventListener(
 
-`Recording ${STATE.selected.size}`;
+"click",
 
-}
+()=>{
 
+loadTabs();
 
-
-// =====================================
-// POLL
-// =====================================
-
-function poll(){
-
-STATE.poller=
-
-setInterval(()=>{
-
-chrome.runtime.sendMessage(
-
-{
-
-action:
-"RUNTIME_STATS"
-
-},
-
-response=>{
-
-
-if(
-!response
-){
-
-return;
+poll();
 
 }
 
-
-STATE.runtime=
-response;
-
-
-STATE.selected=
-
-new Set(
-response.active || []
 );
-
 
 
 document
 .getElementById(
-"runtime"
+"stopAll"
 )
 
-.innerHTML=
+?.addEventListener(
 
-`
+"click",
 
-Sessions ${
-response.active?.length || 0
-}
+()=>{
 
-<br>
+[...STATE.selected]
 
-Starts ${
-response.metrics?.starts || 0
-}
+.forEach(
 
-<br>
+stopCapture
 
-Streams ${
-response.metrics?.nativeStreams || 0
-}
-
-<br>
-
-Errors ${
-response.metrics?.errors || 0
-}
-
-`;
-
-
-
-update();
-
-render(
-STATE.tabs
 );
 
 }
 
 );
-
-},2000);
-
-}
-
 
 
 // =====================================
@@ -734,7 +590,11 @@ STATE.tabs
 function showError(error){
 
 console.error(
+
+"[POPUP]",
+
 error
+
 );
 
 
@@ -745,15 +605,10 @@ document
 
 .innerText=
 
-"Runtime Error";
+String(error);
 
 }
 
-
-
-// =====================================
-// CLEANUP
-// =====================================
 
 window.addEventListener(
 
@@ -762,7 +617,9 @@ window.addEventListener(
 ()=>{
 
 clearInterval(
+
 STATE.poller
+
 );
 
 }
@@ -770,9 +627,8 @@ STATE.poller
 );
 
 
+loadTabs();
 
 poll();
-
-loadTabs();
 
 })();
