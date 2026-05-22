@@ -1,7 +1,7 @@
 // ====================================================
-// TabForge Tab Stream Bridge v2.0
-// Popup → Runtime → Background
-// Production Transport Layer
+// TabForge Tab Stream Bridge v3.0
+// Popup → Background → Native Capture Runtime
+// Phase A: tabcapture-native
 // ====================================================
 
 (() => {
@@ -29,7 +29,9 @@ sent:0,
 
 errors:0,
 
-lastPayload:null
+lastPayload:null,
+
+lastHash:null
 
 };
 
@@ -37,9 +39,53 @@ const STATE=
 globalThis.__TABFORGE_STREAM_STATE__;
 
 
+// =====================================
+// HELPERS
+// =====================================
+
+function sessionId(){
+
+return crypto.randomUUID();
+
+}
+
+
+function blocked(url){
+
+if(!url){
+return true;
+}
+
+const blockedUrls=[
+
+"chrome://",
+
+"edge://",
+
+"devtools://",
+
+"chrome-extension://",
+
+"about:"
+
+];
+
+return blockedUrls.some(
+
+prefix=>
+
+url.startsWith(
+prefix
+)
+
+);
+
+}
+
+
 
 // =====================================
-// TAB FILTER
+// FILTER
 // =====================================
 
 function sanitizeTabs(tabs){
@@ -48,7 +94,8 @@ if(
 !Array.isArray(tabs)
 ){
 
-return [];
+return[];
+
 }
 
 
@@ -60,18 +107,7 @@ tab &&
 tab.id &&
 tab.title &&
 tab.url &&
-
-!tab.url.startsWith(
-"chrome://"
-) &&
-
-!tab.url.startsWith(
-"edge://"
-) &&
-
-!tab.url.startsWith(
-"devtools://"
-)
+!blocked(tab.url)
 
 )
 
@@ -87,12 +123,29 @@ url:
 tab.url,
 
 active:
-tab.active,
+tab.active ?? false,
 
 windowId:
-tab.windowId
+tab.windowId,
+
+captureMode:
+"native"
 
 }));
+
+}
+
+
+
+// =====================================
+// DEDUPE
+// =====================================
+
+function hash(payload){
+
+return JSON.stringify(
+payload
+);
 
 }
 
@@ -128,6 +181,9 @@ return;
 
 const payload={
 
+sessionId:
+sessionId(),
+
 selected_tabs:
 cleaned,
 
@@ -139,6 +195,29 @@ Date.now()
 
 };
 
+
+const currentHash=
+
+hash(payload.selected_tabs);
+
+
+if(
+
+STATE.lastHash===currentHash
+
+){
+
+console.log(
+"[TABSTREAM] duplicate skipped"
+);
+
+return;
+
+}
+
+
+STATE.lastHash=
+currentHash;
 
 STATE.lastPayload=
 payload;
@@ -157,7 +236,8 @@ payload
 
 },
 
-(response)=>{
+response=>{
+
 
 if(
 
@@ -171,7 +251,7 @@ console.error(
 
 "[BRIDGE ERROR]",
 
-chrome.runtime.lastError
+chrome.runtime.lastError.message
 
 );
 
@@ -232,9 +312,29 @@ sent:
 STATE.sent,
 
 errors:
-STATE.errors
+STATE.errors,
+
+duplicateHash:
+!!STATE.lastHash
 
 });
+
+}
+
+
+function health(){
+
+return{
+
+loaded:true,
+
+sent:
+STATE.sent,
+
+errors:
+STATE.errors
+
+};
 
 }
 
@@ -262,6 +362,8 @@ sendTabsToTabForge,
 
 stats,
 
+health,
+
 last
 
 };
@@ -269,6 +371,7 @@ last
 
 console.log(
 "[TABSTREAM READY]"
+
 );
 
 })();

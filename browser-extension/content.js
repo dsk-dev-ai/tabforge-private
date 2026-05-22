@@ -1,7 +1,7 @@
 // =====================================================
-// TabForge Content Bridge v1.0
-// Page Runtime ↔ Extension ↔ Capture Runtime
-// Production Runtime
+// TabForge Content Bridge v2.0
+// Page ↔ Extension ↔ Native Runtime
+// Phase A tabcapture-native
 // =====================================================
 
 (() => {
@@ -18,7 +18,6 @@ return;
 
 globalThis.__TABFORGE_CONTENT_LOADED__=true;
 
-
 console.log(
 "[TABFORGE] Content bridge online"
 );
@@ -30,11 +29,17 @@ console.log(
 
 globalThis.__TABFORGE_CONTENT_STATE__ ??= {
 
-captureRunning:false,
+capture:false,
 
-lastPing:0,
+sessionId:null,
 
-heartbeat:null
+heartbeat:null,
+
+lastURL:location.href,
+
+messageCount:0,
+
+errors:0
 
 };
 
@@ -44,21 +49,28 @@ globalThis.__TABFORGE_CONTENT_STATE__;
 
 
 // ======================================
-// METADATA
+// HELPERS
 // ======================================
 
-function getTabMetadata(){
+function sid(){
+
+return crypto.randomUUID();
+
+}
+
+
+function metadata(){
 
 return{
+
+sessionId:
+STATE.sessionId,
 
 title:
 document.title,
 
 url:
 location.href,
-
-timestamp:
-Date.now(),
 
 visibility:
 document.visibilityState,
@@ -67,31 +79,36 @@ ready:
 document.readyState,
 
 focused:
-document.hasFocus()
+document.hasFocus(),
+
+timestamp:
+Date.now(),
+
+captureMode:
+"native"
 
 };
 
 }
 
 
-
-// ======================================
-// SEND SAFE
-// ======================================
-
-function send(message){
+function send(payload){
 
 try{
 
+STATE.messageCount++;
+
 chrome.runtime.sendMessage(
-message
+payload
 );
 
 }
 catch(error){
 
+STATE.errors++;
+
 console.warn(
-"[MESSAGE FAILED]",
+"[CONTENT SEND ERROR]",
 error
 );
 
@@ -102,7 +119,7 @@ error
 
 
 // ======================================
-// PAGE READY
+// INITIAL LOAD
 // ======================================
 
 window.addEventListener(
@@ -111,29 +128,20 @@ window.addEventListener(
 
 ()=>{
 
-const metadata=
-
-getTabMetadata();
-
-
-console.log(
-
-"[TAB INFO]",
-
-metadata
-
-);
-
-
 send({
 
 action:
 "TAB_METADATA",
 
 payload:
-metadata
+metadata()
 
 });
+
+
+console.log(
+"[TAB READY]"
+);
 
 }
 
@@ -142,20 +150,18 @@ metadata
 
 
 // ======================================
-// URL CHANGE
-// SPA support
+// SPA NAVIGATION
 // ======================================
 
-let lastURL=
-location.href;
+const observer=
 
-setInterval(()=>{
+new MutationObserver(()=>{
 
 if(
-location.href!==lastURL
+location.href!==STATE.lastURL
 ){
 
-lastURL=
+STATE.lastURL=
 location.href;
 
 
@@ -165,19 +171,41 @@ action:
 "URL_CHANGED",
 
 url:
-location.href
+location.href,
+
+time:
+Date.now()
 
 });
 
 
 console.log(
-"[URL CHANGED]",
+
+"[URL UPDATED]",
+
 location.href
+
 );
 
 }
 
-},2000);
+});
+
+
+observer.observe(
+
+document,
+
+{
+
+subtree:true,
+
+childList:true
+
+}
+
+);
+
 
 
 
@@ -190,15 +218,6 @@ document.addEventListener(
 "visibilitychange",
 
 ()=>{
-
-console.log(
-
-"[VISIBILITY]",
-
-document.visibilityState
-
-);
-
 
 send({
 
@@ -213,6 +232,15 @@ location.href
 
 });
 
+
+console.log(
+
+"[VISIBILITY]",
+
+document.visibilityState
+
+);
+
 }
 
 );
@@ -220,7 +248,7 @@ location.href
 
 
 // ======================================
-// TAB CLOSE
+// TAB EXIT
 // ======================================
 
 window.addEventListener(
@@ -239,9 +267,7 @@ location.href
 
 });
 
-}
-
-);
+});
 
 
 
@@ -260,24 +286,19 @@ sendResponse
 try{
 
 
-// ------------------------
-// START
-// ------------------------
+// =============================
+// START SESSION
+// =============================
 
 if(
 
-message.action===
-"RUN_CAPTURE"
+message.action==="RUN_CAPTURE"
 
 ){
 
 if(
-STATE.captureRunning
+STATE.capture
 ){
-
-console.warn(
-"[CAPTURE ACTIVE]"
-);
 
 sendResponse({
 
@@ -285,41 +306,34 @@ success:true
 
 });
 
-return true;
+return;
 
 }
 
 
-if(
+STATE.capture=true;
 
-!globalThis.TabForgeCapture
-
-){
-
-throw new Error(
-"Capture runtime unavailable"
-);
-
-}
+STATE.sessionId=sid();
 
 
 console.log(
-"[CAPTURE START]"
-);
 
+"[CAPTURE ACTIVE]",
 
-STATE.captureRunning=true;
-
-
-await globalThis
-.TabForgeCapture
-.startTabCapture(
-
-String(
-message.tabId
-)
+STATE.sessionId
 
 );
+
+
+send({
+
+action:
+"CAPTURE_STARTED",
+
+sessionId:
+STATE.sessionId
+
+});
 
 
 sendResponse({
@@ -332,38 +346,31 @@ success:true
 
 
 
-// ------------------------
+// =============================
 // STOP
-// ------------------------
+// =============================
 
 if(
 
-message.action===
-"STOP_CAPTURE"
+message.action==="STOP_CAPTURE"
 
 ){
 
-if(
-
-globalThis
-.TabForgeCapture
-
-){
-
-globalThis
-.TabForgeCapture
-.stopTabCapture(
-
-String(
-message.tabId
-)
-
-);
-
-}
+STATE.capture=false;
 
 
-STATE.captureRunning=false;
+send({
+
+action:
+"CAPTURE_STOPPED",
+
+sessionId:
+STATE.sessionId
+
+});
+
+
+STATE.sessionId=null;
 
 
 console.log(
@@ -381,14 +388,13 @@ success:true
 
 
 
-// ------------------------
-// PING
-// ------------------------
+// =============================
+// HEALTH
+// =============================
 
 if(
 
-message.action===
-"PING"
+message.action==="PING"
 
 ){
 
@@ -397,7 +403,13 @@ sendResponse({
 alive:true,
 
 capture:
-STATE.captureRunning
+STATE.capture,
+
+messages:
+STATE.messageCount,
+
+errors:
+STATE.errors
 
 });
 
@@ -405,6 +417,8 @@ STATE.captureRunning
 
 }
 catch(error){
+
+STATE.errors++;
 
 console.error(
 
@@ -425,7 +439,6 @@ error.toString()
 });
 
 }
-
 
 return true;
 
@@ -448,7 +461,10 @@ send({
 action:
 "HEARTBEAT",
 
-timestamp:
+capture:
+STATE.capture,
+
+time:
 Date.now(),
 
 url:
@@ -456,13 +472,39 @@ location.href
 
 });
 
-},30000);
+},15000);
 
 
+
+
+// ======================================
+// DEBUG
+// ======================================
+
+globalThis.TabForgeContent={
+
+stats(){
+
+console.table({
+
+capture:
+STATE.capture,
+
+messages:
+STATE.messageCount,
+
+errors:
+STATE.errors
+
+});
+
+}
+
+};
 
 
 console.log(
-"[TABFORGE] Content ready"
+"[TABFORGE CONTENT READY]"
 );
 
 })();

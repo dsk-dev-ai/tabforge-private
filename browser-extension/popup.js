@@ -1,25 +1,80 @@
 // ====================================================
-// TabForge Popup Runtime v3.0
-// Production Dashboard UI
+// TabForge Popup Runtime v4.0
+// Native Capture Dashboard
+// Phase A
 // ====================================================
 
-(() => {
+(()=>{
 
 console.log(
 "[TABFORGE POPUP] Boot"
 );
 
 
+// =====================================
+// STATE
+// =====================================
+
 globalThis.__TABFORGE_POPUP__ ??= {
 
 selected:new Set(),
 
-poller:null
+poller:null,
+
+tabs:[]
 
 };
 
 const STATE=
 globalThis.__TABFORGE_POPUP__;
+
+
+
+// =====================================
+// HELPERS
+// =====================================
+
+function blocked(url){
+
+if(!url){
+return true;
+}
+
+return [
+
+"chrome://",
+
+"edge://",
+
+"devtools://",
+
+"chrome-extension://",
+
+"about:"
+
+]
+
+.some(
+
+v=>url.startsWith(v)
+
+);
+
+}
+
+
+function button(text){
+
+const b=
+document.createElement(
+"button"
+);
+
+b.innerText=text;
+
+return b;
+
+}
 
 
 
@@ -32,18 +87,11 @@ async function loadTabs(){
 try{
 
 const tabs=
+
 await chrome.tabs.query({});
 
 
-const container=
-document.getElementById(
-"tabs"
-);
-
-container.innerHTML="";
-
-
-const valid=
+STATE.tabs=
 
 tabs.filter(
 
@@ -52,19 +100,13 @@ tab=>
 tab.id &&
 tab.url &&
 tab.title &&
+!blocked(tab.url)
 
-!tab.url.startsWith(
-"chrome://"
-) &&
+);
 
-!tab.url.startsWith(
-"edge://"
-) &&
 
-!tab.url.startsWith(
-"devtools://"
-)
-
+render(
+STATE.tabs
 );
 
 
@@ -75,12 +117,7 @@ document
 
 .innerText=
 
-`${valid.length} tabs`;
-
-
-valid.forEach(
-createCard
-);
+`${STATE.tabs.length} tabs`;
 
 }
 catch(error){
@@ -96,12 +133,36 @@ error
 
 
 // =====================================
+// RENDER
+// =====================================
+
+function render(tabs){
+
+const container=
+
+document.getElementById(
+"tabs"
+);
+
+container.innerHTML="";
+
+
+tabs.forEach(
+createCard
+);
+
+}
+
+
+
+// =====================================
 // CARD
 // =====================================
 
 function createCard(tab){
 
 const root=
+
 document.createElement(
 "div"
 );
@@ -112,6 +173,7 @@ root.className=
 
 
 const top=
+
 document.createElement(
 "div"
 );
@@ -119,9 +181,13 @@ document.createElement(
 top.style.display=
 "flex";
 
+top.style.alignItems=
+"center";
+
 
 
 const icon=
+
 document.createElement(
 "img"
 );
@@ -130,18 +196,19 @@ icon.width=16;
 
 icon.height=16;
 
+icon.style.marginRight=
+"8px";
+
 icon.src=
 
 tab.favIconUrl ||
 
 "icons/icon16.png";
 
-icon.style.marginRight=
-"6px";
-
 
 
 const title=
+
 document.createElement(
 "div"
 );
@@ -151,24 +218,43 @@ title.className=
 
 title.innerText=
 
-tab.title.substring(
+tab.title.slice(
 0,
 50
 );
 
 
 
-top.appendChild(
-icon
+const native=
+
+document.createElement(
+"span"
 );
 
-top.appendChild(
-title
-);
+native.innerText=
+"Native";
+
+native.style.marginLeft=
+"auto";
+
+native.style.fontSize=
+"10px";
+
+native.style.opacity=
+".6";
+
+
+
+top.appendChild(icon);
+
+top.appendChild(title);
+
+top.appendChild(native);
 
 
 
 const url=
+
 document.createElement(
 "div"
 );
@@ -182,6 +268,7 @@ tab.url;
 
 
 const controls=
+
 document.createElement(
 "div"
 );
@@ -192,29 +279,45 @@ controls.className=
 
 
 const start=
+
 button(
 "Start"
 );
 
-start.onclick=
-()=>startCapture(
-tab,
-start
-);
-
-
-
 const stop=
+
 button(
 "Stop"
 );
 
-stop.onclick=
-()=>stopCapture(
+
+if(
+STATE.selected.has(tab.id)
+){
+
+start.disabled=true;
+
+}
+
+
+start.onclick=
+
+()=>startCapture(
+
 tab,
 start
+
 );
 
+
+stop.onclick=
+
+()=>stopCapture(
+
+tab,
+start
+
+);
 
 
 controls.appendChild(
@@ -224,6 +327,7 @@ start
 controls.appendChild(
 stop
 );
+
 
 
 root.appendChild(
@@ -252,29 +356,10 @@ root
 
 
 // =====================================
-// BUTTON
-// =====================================
-
-function button(text){
-
-const b=
-document.createElement(
-"button"
-);
-
-b.innerText=text;
-
-return b;
-
-}
-
-
-
-// =====================================
 // START
 // =====================================
 
-async function startCapture(
+function startCapture(
 
 tab,
 buttonEl
@@ -282,9 +367,11 @@ buttonEl
 ){
 
 if(
+
 STATE.selected.has(
 tab.id
 )
+
 ){
 
 return;
@@ -292,8 +379,7 @@ return;
 }
 
 
-buttonEl.disabled=
-true;
+buttonEl.disabled=true;
 
 
 STATE.selected.add(
@@ -301,7 +387,7 @@ tab.id
 );
 
 
-updateStatus();
+update();
 
 
 chrome.runtime.sendMessage(
@@ -319,15 +405,22 @@ tab.id
 response=>{
 
 if(
+
 !response?.success
+
 ){
 
-showError(
-response?.error
+STATE.selected.delete(
+tab.id
 );
 
-buttonEl.disabled=
-false;
+buttonEl.disabled=false;
+
+showError(
+
+response?.error
+
+);
 
 return;
 
@@ -361,11 +454,10 @@ STATE.selected.delete(
 tab.id
 );
 
-buttonEl.disabled=
-false;
+buttonEl.disabled=false;
 
 
-updateStatus();
+update();
 
 
 chrome.runtime.sendMessage({
@@ -386,7 +478,7 @@ tab.id
 // STATUS
 // =====================================
 
-function updateStatus(){
+function update(){
 
 document
 .getElementById(
@@ -396,6 +488,111 @@ document
 .innerText=
 
 `Recording ${STATE.selected.size}`;
+
+}
+
+
+
+// =====================================
+// SEARCH
+// =====================================
+
+document
+.getElementById(
+"search"
+)
+
+.addEventListener(
+
+"input",
+
+e=>{
+
+const q=
+
+e.target.value
+
+.toLowerCase();
+
+
+const filtered=
+
+STATE.tabs.filter(
+
+tab=>
+
+tab.title
+.toLowerCase()
+
+.includes(q)
+
+||
+
+tab.url
+.toLowerCase()
+
+.includes(q)
+
+);
+
+
+render(
+filtered
+);
+
+}
+
+);
+
+
+
+
+// =====================================
+// RUNTIME
+// =====================================
+
+function poll(){
+
+STATE.poller=
+
+setInterval(()=>{
+
+chrome.runtime.sendMessage(
+
+{
+
+action:
+"RUNTIME_STATS"
+
+},
+
+response=>{
+
+
+if(
+!response
+){
+
+return;
+
+}
+
+
+document
+.getElementById(
+"runtime"
+)
+
+.innerText=
+
+`Sessions ${response.active?.length || 0}`;
+
+
+}
+
+);
+
+},3000);
 
 }
 
@@ -418,63 +615,14 @@ document
 
 .innerText=
 
-`Error`;
+`Runtime Error`;
 
 }
 
 
 
 // =====================================
-// STATS
-// =====================================
-
-function runtimePoll(){
-
-STATE.poller=
-
-setInterval(()=>{
-
-chrome.runtime.sendMessage(
-
-{
-
-action:
-"RUNTIME_STATS"
-
-},
-
-response=>{
-
-if(
-!response
-){
-
-return;
-
-}
-
-
-document
-.getElementById(
-"runtime"
-)
-
-.innerText=
-
-`Sessions ${response.active.length}`;
-
-}
-
-);
-
-},5000);
-
-}
-
-
-
-// =====================================
-// CLEANUP
+// EXIT
 // =====================================
 
 window.addEventListener(
@@ -492,8 +640,7 @@ STATE.poller
 );
 
 
-
-runtimePoll();
+poll();
 
 loadTabs();
 
