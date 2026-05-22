@@ -1,30 +1,71 @@
 use std::{
     collections::HashMap,
-    sync::{Arc,Mutex},
-    time::{SystemTime,UNIX_EPOCH}
+    sync::{Arc, Mutex, OnceLock},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use futures_util::StreamExt;
 
+use serde::Deserialize;
+
 use tokio::net::{
     TcpListener,
-    TcpStream
+    TcpStream,
 };
 
 use tokio_tungstenite::accept_async;
 
-use serde::Deserialize;
+use crate::ipc::protocol::envelope::{
+    EnvelopeV1,
+    MessageType,
+    PROTOCOL_VERSION,
+};
 
 use crate::encoder::ffmpeg::{
     start_session,
     append_chunk,
-    close_session
+    close_session,
 };
 
 use crate::workers::pool::{
     assign_worker,
-    release_worker
+    release_worker,
 };
+
+
+// ========================================
+// METRICS
+// ========================================
+
+#[derive(Default)]
+
+struct ProtocolMetrics {
+
+    protocol_accepted:u64,
+
+    protocol_rejected:u64,
+
+    schema_mismatch:u64
+}
+
+static METRICS:
+OnceLock<
+    Mutex<ProtocolMetrics>
+>
+=
+OnceLock::new();
+
+
+fn metrics()
+-> &'static Mutex<ProtocolMetrics>{
+
+    METRICS.get_or_init(
+        ||
+        Mutex::new(
+            ProtocolMetrics::default()
+        )
+    )
+}
 
 
 // ========================================
@@ -37,7 +78,8 @@ Mutex<
 HashMap<
 String,
 StreamSession
->>
+>
+>
 >;
 
 
@@ -79,6 +121,7 @@ Deserialize
 struct MetaPacket{
 
     #[serde(rename="type")]
+
     packet_type:String,
 
     session_id:String,
@@ -93,19 +136,6 @@ struct MetaPacket{
 }
 
 
-#[derive(
-Debug,
-Deserialize
-)]
-
-#[serde(rename_all="camelCase")]
-
-struct SessionEnd{
-
-    session_id:String
-}
-
-
 
 // ========================================
 // INIT
@@ -113,34 +143,35 @@ struct SessionEnd{
 
 pub fn initialize_socket_runtime(){
 
-println!();
+    metrics();
 
-println!("========== IPC ==========");
+    println!();
 
-println!("[IPC] websocket enabled");
+    println!("========== IPC ==========");
 
-println!("[IPC] native session ownership");
+    println!("[IPC] websocket enabled");
 
-println!("[IPC] transport runtime");
+    println!("[IPC] protocol envelope v1");
 
-println!("[IPC] worker routing");
+    println!("[IPC] worker routing");
 
-println!("=========================");
+    println!("[IPC] session ownership");
 
-println!();
+    println!("=========================");
 
+    println!();
 }
 
 
 pub async fn listen_for_streams(){
 
-println!(
-"[IPC] awaiting extension"
-);
+    println!(
+        "[IPC] awaiting extension"
+    );
 
-println!(
-"[IPC] ws://127.0.0.1:8765"
-);
+    println!(
+        "[IPC] ws://127.0.0.1:8765"
+    );
 
 }
 
@@ -182,6 +213,7 @@ println!(
 
 
 let sessions:
+
 SessionStore=
 
 Arc::new(
@@ -245,6 +277,111 @@ error
 
 
 // ========================================
+// ENVELOPE
+// ========================================
+
+fn parse_envelope(
+
+text:&str
+
+)->Option<EnvelopeV1>{
+
+let packet:
+
+Result<
+EnvelopeV1,
+_
+>
+
+=
+
+serde_json
+::from_str(
+text
+);
+
+
+match packet{
+
+Ok(v)=>{
+
+
+if v.version
+!=
+PROTOCOL_VERSION{
+
+println!(
+"[INVALID VERSION]"
+);
+
+
+if let Ok(mut m)=
+metrics().lock(){
+
+m.protocol_rejected+=1;
+
+}
+
+return None;
+
+}
+
+
+if let Err(error)=
+v.validate(){
+
+println!(
+"[REJECT] {}",
+error
+);
+
+
+if let Ok(mut m)=
+metrics().lock(){
+
+m.protocol_rejected+=1;
+
+}
+
+return None;
+
+}
+
+
+if let Ok(mut m)=
+metrics().lock(){
+
+m.protocol_accepted+=1;
+
+}
+
+
+Some(v)
+
+}
+
+Err(_)=>{
+
+
+if let Ok(mut m)=
+metrics().lock(){
+
+m.schema_mismatch+=1;
+
+}
+
+
+None
+
+}
+
+}
+
+}
+
+
+
+// ========================================
 // CONNECTION
 // ========================================
 
@@ -283,7 +420,8 @@ return;
 let(
 _,
 mut read
-)=ws.split();
+)=
+ws.split();
 
 
 let mut active_session=
@@ -292,9 +430,11 @@ String::new();
 
 
 while let Some(msg)=
+
 read.next().await{
 
 match msg{
+
 
 Ok(message)=>{
 
@@ -306,6 +446,7 @@ if !active_session.is_empty(){
 shutdown_session(
 
 &active_session,
+
 &sessions
 
 );
@@ -326,6 +467,10 @@ message.into_data();
 
 
 if active_session.is_empty(){
+
+println!(
+"[SKIP] binary before metadata"
+);
 
 continue;
 
@@ -361,50 +506,90 @@ Err(_)=>continue
 };
 
 
-if text.contains(
-"heartbeat"
+
+if let Some(packet)=
+
+parse_envelope(
+&text
 ){
+
+match packet.message_type{
+
+
+MessageType::Heartbeat=>{
 
 continue;
 
 }
 
 
-if text.contains(
-"session_end"
-){
+MessageType::SessionEnd=>{
 
-let packet:
+shutdown_session(
+
+&packet.session_id,
+
+&sessions
+
+);
+
+continue;
+
+}
+
+
+MessageType::SessionStart
+|
+MessageType::SessionMeta=>{
+
+let meta:
 
 Result<
-SessionEnd,
+MetaPacket,
 _
 >
 
 =
 
 serde_json
-::from_str(
-&text
+::from_value(
+packet.payload
 );
 
 
-if let Ok(p)=packet{
+if let Ok(meta)=meta{
 
-shutdown_session(
+active_session=
 
-&p.session_id,
+meta
+.session_id
+.clone();
+
+
+create_session(
+
+meta,
+
 &sessions
 
 );
 
 }
 
+}
+
+_=>{}
+
+}
+
+
 continue;
 
 }
 
 
+
+// backward compatibility
 
 let meta:
 
@@ -449,6 +634,20 @@ println!(
 "[STREAM ERROR] {}",
 error
 );
+
+
+if !active_session.is_empty(){
+
+shutdown_session(
+
+&active_session,
+
+&sessions
+
+);
+
+}
+
 
 break;
 
@@ -502,11 +701,8 @@ start_session(
 &meta.session_id,
 
 &format!(
-
 "recordings/{}.webm",
-
 meta.session_id
-
 )
 
 );
@@ -550,7 +746,8 @@ UNIX_EPOCH
 
 
 println!(
-"[SESSION START]"
+"[SESSION START] {}",
+meta.session_id
 );
 
 }
@@ -587,50 +784,27 @@ session_id
 session.chunks+=1;
 
 session.total_bytes+=
-
 bytes.len();
 
 
 append_chunk(
-
 session_id,
-
 &bytes
-
 );
 
 
 if session.chunks%10==0{
 
-println!();
-
 println!(
-"[STREAM {}]",
-session_id
-);
 
-println!(
-"tab {}",
-session.tab_id
-);
+"[STREAM {}] chunks={} bytes={}KB",
 
-println!(
-"worker {:?}",
-session.worker
-);
+session_id,
 
-println!(
-"chunks {}",
-session.chunks
-);
+session.chunks,
 
-println!(
-"bytes {}KB",
 session.total_bytes/1024
-);
 
-println!(
-"----------------"
 );
 
 }

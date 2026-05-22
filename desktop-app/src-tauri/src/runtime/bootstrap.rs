@@ -1,407 +1,308 @@
 use std::{
     sync::OnceLock,
-    time::{Duration,Instant}
+    time::{Duration, Instant},
 };
 
 use tokio::{
     runtime::Runtime,
-    time::sleep
+    time::sleep,
 };
 
-use crate::capture::stream::
-initialize_stream;
+use crate::capture::stream::initialize_stream;
 
 use crate::encoder::ffmpeg::{
     initialize_ffmpeg,
-    encoder_stats,
-    list_sessions
+    session_stats,
 };
 
-use crate::encoder::hardware::
-initialize_hardware;
+use crate::encoder::hardware::initialize_hardware;
 
 use crate::ipc::socket::{
     initialize_socket_runtime,
     listen_for_streams,
-    start_websocket_server
+    start_websocket_server,
 };
 
 use crate::workers::pool::{
     initialize_workers,
     worker_stats,
-    list_workers
+    list_workers,
 };
-
 
 // ====================================
 // GLOBAL
 // ====================================
 
-static RUNTIME_READY:
-
-OnceLock<bool>
-
-=OnceLock::new();
-
+static RUNTIME_READY: OnceLock<bool> =
+    OnceLock::new();
 
 
 // ====================================
 // HEALTH
 // ====================================
 
-async fn runtime_heartbeat(){
+async fn runtime_heartbeat() {
 
-loop{
+    loop {
 
-println!(
-"[RUNTIME HEARTBEAT]"
-);
+        println!(
+            "[RUNTIME HEARTBEAT]"
+        );
 
-sleep(
-
-Duration::from_secs(
-30
-)
-
-)
-
-.await;
-
+        sleep(
+            Duration::from_secs(30)
+        )
+        .await;
+    }
 }
-
-}
-
 
 
 // ====================================
-// WORKERS
+// WORKER STATS
 // ====================================
 
-async fn worker_monitor(){
+async fn worker_monitor() {
 
-loop{
+    loop {
 
-worker_stats();
+        worker_stats();
 
-sleep(
-
-Duration::from_secs(
-20
-)
-
-)
-
-.await;
-
+        sleep(
+            Duration::from_secs(20)
+        )
+        .await;
+    }
 }
-
-}
-
 
 
 // ====================================
-// ENCODER
+// ENCODER / SESSION
 // ====================================
 
-async fn encoder_monitor(){
+async fn encoder_monitor() {
 
-loop{
+    loop {
 
-encoder_stats();
+        session_stats();
 
-sleep(
-
-Duration::from_secs(
-25
-)
-
-)
-
-.await;
-
+        sleep(
+            Duration::from_secs(25)
+        )
+        .await;
+    }
 }
-
-}
-
-
-
-// ====================================
-// SESSIONS
-// ====================================
-
-async fn session_monitor(){
-
-loop{
-
-list_sessions();
-
-sleep(
-
-Duration::from_secs(
-35
-)
-
-)
-
-.await;
-
-}
-
-}
-
 
 
 // ====================================
 // WORKER DETAIL
 // ====================================
 
-async fn worker_detail(){
+async fn worker_detail() {
 
-loop{
+    loop {
 
-list_workers();
+        list_workers();
 
-sleep(
-
-Duration::from_secs(
-45
-)
-
-)
-
-.await;
-
+        sleep(
+            Duration::from_secs(45)
+        )
+        .await;
+    }
 }
-
-}
-
 
 
 // ====================================
 // INIT
 // ====================================
 
-pub fn initialize_runtime_services(){
+pub fn initialize_runtime_services() {
 
-let boot=
+    let boot =
+        Instant::now();
 
-Instant::now();
+    println!();
 
+    println!(
+        "========== TABFORGE =========="
+    );
 
-println!();
-
-println!(
-"========== TABFORGE =========="
-);
-
-println!(
-"[BOOT] Runtime"
-);
+    println!(
+        "[BOOT] Runtime"
+    );
 
 
-// ====================================
-// CAPTURE
-// ====================================
+    // ============================
+    // CAPTURE
+    // ============================
 
-println!(
-"[BOOT] Capture"
-);
+    println!(
+        "[BOOT] Capture"
+    );
 
-initialize_stream();
-
-
-// ====================================
-// ENCODER
-// ====================================
-
-println!(
-"[BOOT] Encoder"
-);
-
-initialize_ffmpeg();
-
-initialize_hardware();
+    initialize_stream();
 
 
-// ====================================
-// WORKERS
-// ====================================
+    // ============================
+    // ENCODER
+    // ============================
 
-println!(
-"[BOOT] Workers"
-);
+    println!(
+        "[BOOT] Encoder"
+    );
 
-initialize_workers();
+    initialize_ffmpeg();
 
-
-// ====================================
-// IPC
-// ====================================
-
-println!(
-"[BOOT] IPC"
-);
-
-initialize_socket_runtime();
+    initialize_hardware();
 
 
-// ====================================
-// TOKIO
-// ====================================
+    // ============================
+    // WORKERS
+    // ============================
 
-println!(
-"[BOOT] Tokio"
-);
+    println!(
+        "[BOOT] Workers"
+    );
 
-
-let runtime=
-
-Runtime::new()
-
-.expect(
-
-"tokio failed"
-
-);
+    initialize_workers();
 
 
-runtime.spawn(
+    // ============================
+    // IPC
+    // ============================
 
-async{
+    println!(
+        "[BOOT] IPC"
+    );
 
-listen_for_streams()
+    initialize_socket_runtime();
 
-.await;
 
+    // ============================
+    // TOKIO
+    // ============================
+
+    println!(
+        "[BOOT] Tokio"
+    );
+
+    let runtime =
+        Runtime::new()
+        .expect(
+            "tokio runtime failed"
+        );
+
+
+    runtime.spawn(async {
+
+        listen_for_streams()
+            .await;
+
+    });
+
+
+    runtime.spawn(async {
+
+        start_websocket_server()
+            .await;
+
+    });
+
+
+    // ============================
+    // MONITORS
+    // ============================
+
+    runtime.spawn(
+        runtime_heartbeat()
+    );
+
+    runtime.spawn(
+        worker_monitor()
+    );
+
+    runtime.spawn(
+        encoder_monitor()
+    );
+
+    runtime.spawn(
+        worker_detail()
+    );
+
+
+    // ============================
+    // READY
+    // ============================
+
+    RUNTIME_READY
+        .set(true)
+        .ok();
+
+
+    std::mem::forget(
+        runtime
+    );
+
+
+    // ============================
+    // COMPLETE
+    // ============================
+
+    println!();
+
+    println!(
+        "[BOOT OK]"
+    );
+
+    println!(
+        "[BOOT] Browser ingest active"
+    );
+
+    println!(
+        "[BOOT] Protocol envelope active"
+    );
+
+    println!(
+        "[BOOT] FFmpeg ownership active"
+    );
+
+    println!(
+        "[BOOT] Worker routing active"
+    );
+
+    println!(
+        "[BOOT] WebSocket online"
+    );
+
+    println!(
+        "[BOOT] Hardware acceleration active"
+    );
+
+    println!(
+        "[BOOT] Runtime monitors active"
+    );
+
+    println!(
+        "[BOOT TIME] {:?}",
+        boot.elapsed()
+    );
+
+    println!(
+        "=============================="
+    );
+
+    println!();
 }
-
-);
-
-
-runtime.spawn(
-
-async{
-
-start_websocket_server()
-
-.await;
-
-}
-
-);
-
-
-// monitors
-
-runtime.spawn(
-runtime_heartbeat()
-);
-
-runtime.spawn(
-worker_monitor()
-);
-
-runtime.spawn(
-encoder_monitor()
-);
-
-runtime.spawn(
-session_monitor()
-);
-
-runtime.spawn(
-worker_detail()
-);
-
-
-// ready
-
-RUNTIME_READY
-
-.set(true)
-
-.ok();
-
-
-// keep runtime
-
-std::mem::forget(
-runtime
-);
-
-
-// ====================================
-// COMPLETE
-// ====================================
-
-println!();
-
-println!(
-"[BOOT OK]"
-);
-
-println!(
-"[BOOT] Browser ingest active"
-);
-
-println!(
-"[BOOT] Native session runtime"
-);
-
-println!(
-"[BOOT] FFmpeg ownership active"
-);
-
-println!(
-"[BOOT] Worker routing active"
-);
-
-println!(
-"[BOOT] WebSocket online"
-);
-
-println!(
-"[BOOT] Hardware acceleration active"
-);
-
-println!(
-"[BOOT] Session monitors active"
-);
-
-println!(
-
-"[BOOT TIME] {:?}",
-
-boot.elapsed()
-
-);
-
-println!(
-"=============================="
-);
-
-println!();
-
-}
-
 
 
 // ====================================
 // STATUS
 // ====================================
 
-pub fn runtime_alive()
+pub fn runtime_alive() -> bool {
 
-->bool{
-
-RUNTIME_READY
-
-.get()
-
-.copied()
-
-.unwrap_or(
-false
-)
+    RUNTIME_READY
+        .get()
+        .copied()
+        .unwrap_or(false)
 
 }

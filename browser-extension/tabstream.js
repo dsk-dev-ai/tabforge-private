@@ -1,49 +1,51 @@
 // ====================================================
-// TabForge Tab Stream Bridge v3.0
-// Popup → Background → Native Capture Runtime
-// Phase A: tabcapture-native
+// TabForge Tab Stream Bridge v4
+// Popup → Background → Capture Runtime
+// Phase D Protocol Envelope
 // ====================================================
 
-(() => {
+(()=>{
 
-if(globalThis.__TABFORGE_STREAM_LOADED__){
+if(window.__TABFORGE_STREAM_LOADED__){
 
 console.log(
-"[TABSTREAM] Already loaded"
+"[TABSTREAM] already loaded"
 );
 
 return;
 
 }
 
-globalThis.__TABFORGE_STREAM_LOADED__=true;
+window.__TABFORGE_STREAM_LOADED__=true;
 
 
 // =====================================
 // STATE
 // =====================================
 
-globalThis.__TABFORGE_STREAM_STATE__ ??= {
+window.__TABFORGE_STREAM_STATE__ ??= {
 
 sent:0,
-
 errors:0,
-
+duplicates:0,
 lastPayload:null,
-
 lastHash:null
 
 };
 
 const STATE=
-globalThis.__TABFORGE_STREAM_STATE__;
+window.__TABFORGE_STREAM_STATE__;
+
+const PROTOCOL_VERSION=
+"v1";
+
 
 
 // =====================================
 // HELPERS
 // =====================================
 
-function sessionId(){
+function id(){
 
 return crypto.randomUUID();
 
@@ -53,68 +55,103 @@ return crypto.randomUUID();
 function blocked(url){
 
 if(!url){
+
 return true;
+
 }
 
-const blockedUrls=[
+
+return [
 
 "chrome://",
-
 "edge://",
-
+"about:",
 "devtools://",
+"chrome-extension://"
 
-"chrome-extension://",
+]
 
-"about:"
+.some(
 
-];
-
-return blockedUrls.some(
-
-prefix=>
-
-url.startsWith(
-prefix
-)
+v=>url.startsWith(v)
 
 );
 
 }
 
 
+function createEnvelope(
+
+type,
+payload
+
+){
+
+return{
+
+version:
+PROTOCOL_VERSION,
+
+traceId:
+id(),
+
+timestamp:
+Date.now(),
+
+sessionId:
+id(),
+
+type,
+
+payload
+
+};
+
+}
+
+
 
 // =====================================
-// FILTER
+// TAB FILTER
 // =====================================
 
 function sanitizeTabs(tabs){
 
 if(
-!Array.isArray(tabs)
+
+!Array.isArray(
+tabs
+)
+
 ){
 
-return[];
+return [];
 
 }
 
 
 return tabs
 
-.filter(tab=>
+.filter(
+
+tab=>
 
 tab &&
 tab.id &&
-tab.title &&
 tab.url &&
-!blocked(tab.url)
+tab.title &&
+!blocked(
+tab.url
+)
 
 )
 
-.map(tab=>({
+.map(
+
+tab=>({
 
 id:
-tab.id,
+String(tab.id),
 
 title:
 tab.title,
@@ -122,16 +159,18 @@ tab.title,
 url:
 tab.url,
 
-active:
-tab.active ?? false,
-
 windowId:
 tab.windowId,
+
+active:
+tab.active ?? false,
 
 captureMode:
 "native"
 
-}));
+})
+
+);
 
 }
 
@@ -141,11 +180,9 @@ captureMode:
 // DEDUPE
 // =====================================
 
-function hash(payload){
+function hash(v){
 
-return JSON.stringify(
-payload
-);
+return JSON.stringify(v);
 
 }
 
@@ -167,38 +204,38 @@ tabs
 
 
 if(
-cleaned.length===0
+!cleaned.length
 ){
-
-console.warn(
-"[TABSTREAM] no valid tabs"
-);
 
 return;
 
 }
 
 
-const payload={
+const payload=
 
-sessionId:
-sessionId(),
+createEnvelope(
+
+"SessionMeta",
+
+{
 
 selected_tabs:
 cleaned,
 
 count:
-cleaned.length,
+cleaned.length
 
-timestamp:
-Date.now()
+}
 
-};
+);
 
 
 const currentHash=
 
-hash(payload.selected_tabs);
+hash(
+payload.payload
+);
 
 
 if(
@@ -207,8 +244,10 @@ STATE.lastHash===currentHash
 
 ){
 
+STATE.duplicates++;
+
 console.log(
-"[TABSTREAM] duplicate skipped"
+"[TABSTREAM] duplicate"
 );
 
 return;
@@ -238,7 +277,6 @@ payload
 
 response=>{
 
-
 if(
 
 chrome.runtime.lastError
@@ -251,7 +289,8 @@ console.error(
 
 "[BRIDGE ERROR]",
 
-chrome.runtime.lastError.message
+chrome.runtime.lastError
+.message
 
 );
 
@@ -275,7 +314,7 @@ response
 
 console.log(
 
-"[BRIDGE SENT]",
+"[TAB PAYLOAD]",
 
 payload
 
@@ -304,7 +343,11 @@ error
 // DEBUG
 // =====================================
 
-function stats(){
+window.TabForgeTabStream={
+
+sendTabsToTabForge,
+
+stats(){
 
 console.table({
 
@@ -314,19 +357,19 @@ STATE.sent,
 errors:
 STATE.errors,
 
-duplicateHash:
-!!STATE.lastHash
+duplicates:
+STATE.duplicates
 
 });
 
-}
+},
 
 
-function health(){
+health(){
 
 return{
 
-loaded:true,
+online:true,
 
 sent:
 STATE.sent,
@@ -336,42 +379,29 @@ STATE.errors
 
 };
 
-}
+},
 
 
-function last(){
+last(){
 
 console.log(
+
 STATE.lastPayload
+
 );
 
 }
 
-
-
-// =====================================
-// EXPORT
-// =====================================
-
-globalThis.sendTabsToTabForge=
-sendTabsToTabForge;
-
-globalThis.TabForgeTabStream={
-
-sendTabsToTabForge,
-
-stats,
-
-health,
-
-last
-
 };
+
+
+window.sendTabsToTabForge=
+
+sendTabsToTabForge;
 
 
 console.log(
 "[TABSTREAM READY]"
-
 );
 
 })();
