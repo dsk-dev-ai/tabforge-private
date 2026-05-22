@@ -1,264 +1,740 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{Arc,Mutex},
+    time::{SystemTime,UNIX_EPOCH}
 };
 
 use futures_util::StreamExt;
 
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{
+    TcpListener,
+    TcpStream
+};
 
 use tokio_tungstenite::accept_async;
 
-use uuid::Uuid;
-
 use serde::Deserialize;
 
-use crate::encoder::ffmpeg::{create_muxer, stop_muxer, write_chunk};
+use crate::encoder::ffmpeg::{
+    create_muxer,
+    stop_muxer,
+    write_chunk
+};
 
-use crate::workers::pool::{assign_worker, release_worker};
+use crate::workers::pool::{
+    assign_worker,
+    release_worker
+};
 
-// ======================================
-// TYPES
-// ======================================
 
-type SessionStore = Arc<Mutex<HashMap<String, StreamSession>>>;
+// ========================================
+// STORE
+// ========================================
 
-#[derive(Debug, Default)]
+type SessionStore=
 
-pub struct StreamSession {
-    pub session_id: String,
+Arc<
+Mutex<
+HashMap<
+String,
+StreamSession
+>
+>
+>;
 
-    pub worker: Option<u32>,
 
-    pub chunks: u64,
 
-    pub total_bytes: usize,
+// ========================================
+// SESSION
+// ========================================
 
-    pub active: bool,
+#[derive(Debug)]
 
-    pub started: u64,
+pub struct StreamSession{
+
+    pub session_id:String,
+
+    pub tab_id:String,
+
+    pub worker:Option<u32>,
+
+    pub chunks:u64,
+
+    pub total_bytes:usize,
+
+    pub active:bool,
+
+    pub started:u64
+
 }
 
-#[derive(Debug, Deserialize)]
 
-struct MetaPacket {
-    sessionId: String,
 
-    tabId: String,
+// ========================================
+// META
+// ========================================
 
-    chunkIndex: u64,
+#[derive(
+Debug,
+Deserialize
+)]
 
-    timestamp: u64,
+#[serde(rename_all="camelCase")]
 
-    size: usize,
+struct MetaPacket{
 
-    type_field: String,
+    #[serde(rename="type")]
+
+    packet_type:String,
+
+    session_id:String,
+
+    tab_id:String,
+
+    chunk:u64,
+
+    time:u64,
+
+    size:usize
+
 }
 
-// ======================================
+
+
+#[derive(
+Debug,
+Deserialize
+)]
+
+#[serde(rename_all="camelCase")]
+
+struct SessionEnd{
+
+    session_id:String
+
+}
+
+
+
+// ========================================
 // INIT
-// ======================================
+// ========================================
 
-pub fn initialize_socket_runtime() {
-    println!();
+pub fn initialize_socket_runtime(){
 
-    println!("========== IPC ==========");
+println!();
 
-    println!("[IPC] Socket runtime initialized");
+println!("========== IPC ==========");
 
-    println!("[IPC] WebSocket enabled");
+println!("[IPC] websocket enabled");
 
-    println!("[IPC] Binary routing enabled");
+println!("[IPC] native session runtime");
 
-    println!("[IPC] Worker dispatch active");
+println!("[IPC] browser ownership");
 
-    println!("=========================");
+println!("[IPC] worker routing");
 
-    println!();
+println!("=========================");
+
+println!();
+
 }
 
-pub async fn listen_for_streams() {
-    println!("[IPC] Awaiting extension...");
 
-    println!("[IPC] ws://127.0.0.1:8765");
+
+pub async fn listen_for_streams(){
+
+println!(
+"[IPC] awaiting extension"
+);
+
+println!(
+"[IPC] ws://127.0.0.1:8765"
+);
+
 }
 
-// ======================================
+
+
+// ========================================
 // SERVER
-// ======================================
+// ========================================
 
-pub async fn start_websocket_server() {
-    let listener = match TcpListener::bind("127.0.0.1:8765").await {
-        Ok(v) => v,
+pub async fn start_websocket_server(){
 
-        Err(error) => {
-            println!("[BIND ERROR] {}", error);
+let listener=
 
-            return;
-        }
-    };
+match TcpListener::bind(
+"127.0.0.1:8765"
+)
 
-    println!("[WS] Server active");
+.await{
 
-    let sessions: SessionStore = Arc::new(Mutex::new(HashMap::new()));
+Ok(v)=>v,
 
-    loop {
-        match listener.accept().await {
-            Ok((stream, _)) => {
-                let sessions = Arc::clone(&sessions);
+Err(error)=>{
 
-                tokio::spawn(async move {
-                    handle_connection(stream, sessions).await;
-                });
-            }
+println!(
+"[BIND ERROR] {}",
+error
+);
 
-            Err(error) => {
-                println!("[CONNECT ERROR] {}", error);
-            }
-        }
-    }
+return;
+
 }
 
-// ======================================
+};
+
+
+println!(
+"[WS ONLINE]"
+);
+
+
+let sessions:
+
+SessionStore=
+
+Arc::new(
+
+Mutex::new(
+HashMap::new()
+)
+
+);
+
+
+loop{
+
+match listener.accept().await{
+
+Ok((stream,_))=>{
+
+println!(
+"[BROWSER CONNECTED]"
+);
+
+let sessions=
+
+Arc::clone(
+&sessions
+);
+
+
+tokio::spawn(
+
+async move{
+
+handle_connection(
+stream,
+sessions
+)
+
+.await;
+
+}
+
+);
+
+}
+
+Err(error)=>{
+
+println!(
+"[CONNECT ERROR] {}",
+error
+);
+
+}
+
+}
+
+}
+
+}
+
+
+
+// ========================================
 // CONNECTION
-// ======================================
+// ========================================
 
-async fn handle_connection(stream: TcpStream, sessions: SessionStore) {
-    let ws = match accept_async(stream).await {
-        Ok(v) => v,
+async fn handle_connection(
 
-        Err(error) => {
-            println!("[UPGRADE ERROR] {}", error);
+stream:TcpStream,
 
-            return;
-        }
-    };
+sessions:SessionStore
 
-    let (_, mut read) = ws.split();
+){
 
-    let tab_id = format!("tab_{}", Uuid::new_v4());
+let ws=
 
-    println!("[SESSION START] {}", tab_id);
+match accept_async(
+stream
+)
 
-    while let Some(msg) = read.next().await {
-        match msg {
-            Ok(message) => {
-                if message.is_close() {
-                    shutdown_session(&tab_id, &sessions);
+.await{
 
-                    break;
-                }
+Ok(v)=>v,
 
-                if message.is_ping() {
-                    continue;
-                }
+Err(error)=>{
 
-                if message.is_text() {
-                    let text = message.into_text().unwrap_or_default();
+println!(
+"[UPGRADE ERROR] {}",
+error
+);
 
-                    println!("[META] {}", text);
+return;
 
-                    continue;
-                }
-
-                if message.is_binary() {
-                    let bytes = message.into_data();
-
-                    process_chunk(&tab_id, bytes, &sessions);
-                }
-            }
-
-            Err(error) => {
-                println!("[STREAM ERROR] {}", error);
-
-                shutdown_session(&tab_id, &sessions);
-
-                break;
-            }
-        }
-    }
 }
 
-// ======================================
+};
+
+
+let(
+
+_write,
+
+mut read
+
+)=ws.split();
+
+
+let mut active_session=
+
+String::new();
+
+
+while let Some(msg)=
+
+read.next().await{
+
+match msg{
+
+Ok(message)=>{
+
+
+if message.is_close(){
+
+if !active_session.is_empty(){
+
+shutdown_session(
+
+&active_session,
+
+&sessions
+
+);
+
+}
+
+break;
+
+}
+
+
+
+if message.is_binary(){
+
+let bytes=
+
+message.into_data();
+
+
+if active_session.is_empty(){
+
+println!(
+"[SKIP] binary before metadata"
+);
+
+continue;
+
+}
+
+
+process_chunk(
+
+&active_session,
+
+bytes,
+
+&sessions
+
+);
+
+continue;
+
+}
+
+
+
+if message.is_text(){
+
+let text=
+
+match message.into_text(){
+
+Ok(v)=>v,
+
+Err(_)=>continue
+
+};
+
+
+if text.contains(
+"heartbeat"
+){
+
+continue;
+
+}
+
+
+if text.contains(
+"session_end"
+){
+
+let packet:
+
+Result<
+SessionEnd,
+_
+>
+
+=
+
+serde_json
+::from_str(
+&text
+);
+
+
+if let Ok(p)=packet{
+
+shutdown_session(
+
+&p.session_id,
+
+&sessions
+
+);
+
+}
+
+continue;
+
+}
+
+
+
+let meta:
+
+Result<
+MetaPacket,
+_
+>
+
+=
+
+serde_json
+::from_str(
+&text
+);
+
+
+match meta{
+
+Ok(meta)=>{
+
+active_session=
+
+meta
+.session_id
+.clone();
+
+
+create_session(
+
+meta,
+
+&sessions
+
+);
+
+}
+
+Err(error)=>{
+
+println!(
+"[META ERROR] {}",
+error
+);
+
+}
+
+}
+
+}
+
+}
+
+Err(error)=>{
+
+println!(
+"[STREAM ERROR] {}",
+error
+);
+
+
+if !active_session.is_empty(){
+
+shutdown_session(
+
+&active_session,
+
+&sessions
+
+);
+
+}
+
+break;
+
+}
+
+}
+
+}
+
+}
+
+
+
+// ========================================
+// CREATE
+// ========================================
+
+fn create_session(
+
+meta:MetaPacket,
+
+sessions:&SessionStore
+
+){
+
+let mut store=
+
+sessions
+.lock()
+.unwrap();
+
+
+if store.contains_key(
+&meta.session_id
+){
+
+return;
+
+}
+
+
+let worker=
+
+assign_worker(
+&meta.session_id
+);
+
+
+create_muxer(
+
+&meta.session_id,
+
+&format!(
+
+"recordings/{}.webm",
+
+meta.session_id
+
+)
+
+);
+
+
+store.insert(
+
+meta.session_id.clone(),
+
+StreamSession{
+
+session_id:
+meta.session_id.clone(),
+
+tab_id:
+meta.tab_id.clone(),
+
+worker,
+
+chunks:0,
+
+total_bytes:0,
+
+active:true,
+
+started:
+
+SystemTime::now()
+
+.duration_since(
+UNIX_EPOCH
+)
+
+.unwrap()
+
+.as_secs()
+
+}
+
+);
+
+
+println!(
+
+"[SESSION START] {} -> {}",
+
+meta.tab_id,
+
+meta.session_id
+
+);
+
+}
+
+
+
+// ========================================
 // PROCESS
-// ======================================
+// ========================================
 
-fn process_chunk(tab_id: &str, bytes: Vec<u8>, sessions: &SessionStore) {
-    let mut store = match sessions.lock() {
-        Ok(v) => v,
+fn process_chunk(
 
-        Err(_) => {
-            println!("[LOCK ERROR]");
+session_id:&str,
 
-            return;
-        }
-    };
+bytes:Vec<u8>,
 
-    let session = store.entry(tab_id.to_string()).or_insert_with(|| {
-        let worker = assign_worker(tab_id);
+sessions:&SessionStore
 
-        create_muxer(tab_id, &format!("recordings/{}.webm", tab_id));
+){
 
-        StreamSession {
-            session_id: tab_id.to_string(),
+let mut store=
 
-            worker,
+sessions
+.lock()
+.unwrap();
 
-            chunks: 0,
 
-            total_bytes: 0,
+if let Some(session)=
 
-            active: true,
+store.get_mut(
+session_id
+){
 
-            started: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-        }
-    });
+session.chunks+=1;
 
-    session.chunks += 1;
+session.total_bytes+=
 
-    session.total_bytes += bytes.len();
+bytes.len();
 
-    write_chunk(tab_id, &bytes);
 
-    if session.chunks % 10 == 0 {
-        println!();
+write_chunk(
 
-        println!("[STREAM] {}", tab_id);
+session_id,
 
-        println!("worker {:?}", session.worker);
+&bytes
 
-        println!("chunks {}", session.chunks);
+);
 
-        println!("bytes {}KB", session.total_bytes / 1024);
 
-        println!("active {}", session.active);
+if session.chunks%10==0{
 
-        println!("----------------");
-    }
+println!();
+
+println!(
+"[STREAM {}]",
+session_id
+);
+
+println!(
+"tab {}",
+session.tab_id
+);
+
+println!(
+"worker {:?}",
+session.worker
+);
+
+println!(
+"chunks {}",
+session.chunks
+);
+
+println!(
+"bytes {}KB",
+session.total_bytes/1024
+);
+
+println!(
+"----------------"
+);
+
 }
 
-// ======================================
+}
+
+}
+
+
+
+// ========================================
 // SHUTDOWN
-// ======================================
+// ========================================
 
-fn shutdown_session(tab_id: &str, sessions: &SessionStore) {
-    let mut store = match sessions.lock() {
-        Ok(v) => v,
+fn shutdown_session(
 
-        Err(_) => return,
-    };
+session_id:&str,
 
-    store.remove(tab_id);
+sessions:&SessionStore
 
-    drop(store);
+){
 
-    release_worker(tab_id);
+let mut store=
 
-    stop_muxer(tab_id);
+sessions
+.lock()
+.unwrap();
 
-    println!("[SESSION CLOSED] {}", tab_id);
+
+store.remove(
+session_id
+);
+
+
+drop(store);
+
+
+release_worker(
+session_id
+);
+
+
+stop_muxer(
+session_id
+);
+
+
+println!(
+"[SESSION CLOSED] {}",
+session_id
+);
+
 }
