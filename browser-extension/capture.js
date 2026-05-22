@@ -1,31 +1,31 @@
 // =====================================================
-// TabForge Native Capture Runtime v3.0
-// Stream Attach → MediaRecorder → WS → Rust
-// Phase B
+// TabForge Capture Runtime v4
+// MV3 + Protocol Envelope v1
+// TabCapture → MediaRecorder → WS → Rust
 // =====================================================
 
-(()=>{
+(() => {
 
 try{
 
-if(globalThis.__TABFORGE_RUNTIME__){
+if(window.__TABFORGE_CAPTURE_RUNTIME__){
 
 console.log(
-"[TABFORGE] Runtime loaded"
+"[TABFORGE] capture already loaded"
 );
 
 return;
 
 }
 
-globalThis.__TABFORGE_RUNTIME__=true;
+window.__TABFORGE_CAPTURE_RUNTIME__=true;
 
 
-// ======================================
+// =====================================
 // STATE
-// ======================================
+// =====================================
 
-globalThis.__TABFORGE_STATE__ ??= {
+window.__TABFORGE_CAPTURE_STATE__ ??= {
 
 sessions:new Map(),
 
@@ -43,7 +43,7 @@ bytes:0
 };
 
 const STATE=
-globalThis.__TABFORGE_STATE__;
+window.__TABFORGE_CAPTURE_STATE__;
 
 const SESSIONS=
 STATE.sessions;
@@ -58,34 +58,68 @@ STATE.metrics;
 const WS_URL=
 "ws://127.0.0.1:8765";
 
-const RECORD_INTERVAL=1000;
+const PROTOCOL_VERSION=
+"v1";
+
+const RECORD_INTERVAL=
+1000;
 
 
 
-function now(){
+// =====================================
+// HELPERS
+// =====================================
 
-return Date.now();
-
-}
-
-
-function sessionId(){
+function id(){
 
 return crypto.randomUUID();
 
 }
 
 
+function envelope(
 
-// ======================================
+sessionId,
+type,
+payload
+
+){
+
+return{
+
+version:
+PROTOCOL_VERSION,
+
+traceId:
+id(),
+
+timestamp:
+Date.now(),
+
+sessionId,
+
+type,
+
+payload
+
+};
+
+}
+
+
+
+// =====================================
 // SOCKET
-// ======================================
+// =====================================
 
-async function createSocket(id){
+async function createSocket(sessionId){
 
 const existing=
 
-SOCKETS.get(id);
+SOCKETS.get(
+sessionId
+);
+
 
 if(
 
@@ -109,6 +143,7 @@ new WebSocket(
 WS_URL
 );
 
+
 ws.binaryType=
 "arraybuffer";
 
@@ -116,18 +151,20 @@ ws.binaryType=
 ws.onopen=()=>{
 
 SOCKETS.set(
-id,
+sessionId,
 ws
 );
 
-resolve(
-ws
+console.log(
+"[WS CONNECTED]"
 );
+
+resolve(ws);
 
 };
 
 
-ws.onerror=e=>{
+ws.onerror=(e)=>{
 
 console.error(
 "[WS ERROR]",
@@ -142,20 +179,109 @@ reject(e);
 ws.onclose=()=>{
 
 SOCKETS.delete(
-id
+sessionId
+);
+
+console.log(
+"[WS CLOSED]"
 );
 
 };
 
-});
+}
+
+);
 
 }
 
 
 
-// ======================================
-// ATTACH
-// ======================================
+// =====================================
+// TAB STREAM
+// =====================================
+
+async function createNativeStream(tabId){
+
+try{
+
+const streamId=
+
+await chrome.tabCapture
+.getMediaStreamId({
+
+targetTabId:
+tabId
+
+});
+
+
+const stream=
+
+await navigator
+.mediaDevices
+.getUserMedia({
+
+audio:{
+
+mandatory:{
+
+chromeMediaSource:
+"tab",
+
+chromeMediaSourceId:
+streamId
+
+}
+
+},
+
+video:{
+
+mandatory:{
+
+chromeMediaSource:
+"tab",
+
+chromeMediaSourceId:
+streamId,
+
+maxWidth:1920,
+
+maxHeight:1080,
+
+maxFrameRate:60
+
+}
+
+}
+
+});
+
+
+return stream;
+
+}
+catch(error){
+
+console.error(
+
+"[STREAM ERROR]",
+
+error
+
+);
+
+return null;
+
+}
+
+}
+
+
+
+// =====================================
+// START
+// =====================================
 
 async function attachNativeStream(tabId){
 
@@ -166,47 +292,66 @@ SESSIONS.has(tabId)
 ){
 
 return;
+
 }
 
 
-const media=
+const stream=
 
-await navigator.mediaDevices
-.getUserMedia({
-
-audio:true,
-
-video:true
-
-});
-
-
-const id=
-sessionId();
-
-const ws=
-
-await createSocket(
-id
+await createNativeStream(
+tabId
 );
 
 
-const mime=
+if(!stream){
 
-MediaRecorder
-.isTypeSupported(
+return;
 
-"video/webm;codecs=vp9,opus"
+}
+
+
+const sessionId=
+id();
+
+const socket=
+
+await createSocket(
+sessionId
+);
+
+
+socket.send(
+
+JSON.stringify(
+
+envelope(
+
+sessionId,
+
+"SessionStart",
+
+{
+
+session_id:
+sessionId,
+
+tab_id:
+tabId,
+
+chunk:0,
+
+time:
+Date.now(),
+
+size:0
+
+}
 
 )
 
-?
+)
 
-"video/webm;codecs=vp9,opus"
-
-:
-
-"video/webm";
+);
 
 
 let chunk=0;
@@ -216,17 +361,12 @@ const recorder=
 
 new MediaRecorder(
 
-media,
+stream,
 
 {
 
-mimeType:mime,
-
-videoBitsPerSecond:
-8000000,
-
-audioBitsPerSecond:
-320000
+mimeType:
+"video/webm;codecs=vp9"
 
 }
 
@@ -238,7 +378,11 @@ recorder.onstart=()=>{
 METRICS.started++;
 
 console.log(
-"[RECORDER START]"
+
+"[REC START]",
+
+sessionId
+
 );
 
 };
@@ -246,11 +390,10 @@ console.log(
 
 recorder.ondataavailable=
 
-async(e)=>{
+async(event)=>{
 
 if(
-!e.data ||
-e.data.size===0
+!event.data.size
 ){
 
 return;
@@ -259,7 +402,7 @@ return;
 
 
 if(
-ws.readyState!==1
+socket.readyState!==1
 ){
 
 return;
@@ -269,7 +412,7 @@ return;
 
 const buffer=
 
-await e
+await event
 .data
 .arrayBuffer();
 
@@ -282,40 +425,46 @@ METRICS.bytes+=
 buffer.byteLength;
 
 
-ws.send(
+socket.send(
 
-JSON.stringify({
+JSON.stringify(
 
-type:"meta",
+envelope(
 
-capture:"native",
+sessionId,
 
-sessionId:id,
+"ChunkPacket",
 
-tabId,
+{
 
 chunk,
-
-time:now(),
 
 size:
 buffer.byteLength
 
-})
+}
+
+)
+
+)
 
 );
 
 
-ws.send(
+socket.send(
 buffer
 );
 
 
-if(chunk%10===0){
+if(
+chunk%10===0
+){
 
 console.log(
 
-`[STREAM ${chunk}]`
+"[CHUNK]",
+
+chunk
 
 );
 
@@ -324,7 +473,8 @@ console.log(
 };
 
 
-media
+
+stream
 .getTracks()
 
 .forEach(
@@ -356,13 +506,13 @@ tabId,
 
 {
 
-stream:media,
+sessionId,
 
-socket:ws,
+socket,
 
-recorder,
+stream,
 
-sessionId:id
+recorder
 
 }
 
@@ -375,15 +525,22 @@ RECORD_INTERVAL
 
 
 console.log(
-`[LIVE ${tabId}]`
+
+"[LIVE]",
+
+tabId
+
 );
 
 }
 catch(error){
 
 console.error(
-"[ATTACH ERROR]",
+
+"[CAPTURE ERROR]",
+
 error
+
 );
 
 }
@@ -392,19 +549,22 @@ error
 
 
 
-// ======================================
+// =====================================
 // STOP
-// ======================================
+// =====================================
 
 function stopTabCapture(tabId){
 
-const s=
+const session=
 
 SESSIONS.get(
 tabId
 );
 
-if(!s){
+
+if(
+!session
+){
 
 return;
 
@@ -413,53 +573,88 @@ return;
 
 try{
 
-s.recorder?.stop();
+session.recorder
+?.stop();
 
 
-s.stream
+session.stream
 ?.getTracks()
 
 .forEach(
 
-t=>t.stop()
+track=>track.stop()
 
 );
 
 
 if(
-s.socket?.readyState===1
+
+session.socket
+?.readyState===1
+
 ){
 
-s.socket.send(
+session.socket.send(
 
-JSON.stringify({
+JSON.stringify(
 
-type:"session_end",
+envelope(
 
-sessionId:
-s.sessionId
+session.sessionId,
 
-})
+"SessionEnd",
+
+{
+
+session_id:
+session.sessionId
+
+}
+
+)
+
+)
 
 );
 
-s.socket.close();
+
+session.socket.close();
 
 }
+
+
+SOCKETS.delete(
+
+session.sessionId
+
+);
 
 
 SESSIONS.delete(
 tabId
 );
 
+
 METRICS.stopped++;
+
+
+console.log(
+
+"[STOP]",
+
+tabId
+
+);
 
 }
 catch(error){
 
 console.error(
-"[STOP]",
+
+"[STOP ERROR]",
+
 error
+
 );
 
 }
@@ -468,26 +663,23 @@ error
 
 
 
-// ======================================
+// =====================================
 // DEBUG
-// ======================================
+// =====================================
 
-function stats(){
+window.TabForgeCapture={
+
+attachNativeStream,
+
+stopTabCapture,
+
+stats(){
 
 console.table(
 METRICS
 );
 
 }
-
-
-globalThis.TabForgeCapture={
-
-attachNativeStream,
-
-stopTabCapture,
-
-stats
 
 };
 
