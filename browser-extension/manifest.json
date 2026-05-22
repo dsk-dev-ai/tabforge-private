@@ -5,70 +5,122 @@
 
   "short_name": "TabForge",
 
-  "version": "1.3.0",
+  "version": "2.0.0",
 
-  "description": "Multi-tab browser recording engine with native tab capture and Rust desktop runtime.",
+  "description": "Native browser tab capture engine with WebSocket transport and Rust desktop runtime.",
 
   "minimum_chrome_version": "110",
 
   "permissions": [
+
     "tabs",
+
     "tabCapture",
+
+    "tabGroups",
+
     "activeTab",
+
     "storage",
+
     "scripting",
+
     "notifications",
+
     "alarms"
+
   ],
 
-  "host_permissions": [
+  "optional_permissions":[
+
+    "clipboardRead",
+
+    "clipboardWrite"
+
+  ],
+
+  "host_permissions":[
+
     "<all_urls>",
-    "http://127.0.0.1/*"
+
+    "http://127.0.0.1/*",
+
+    "ws://127.0.0.1/*"
+
   ],
 
-  "background": {
-    "service_worker": "background.js",
-    "type": "module"
+  "background":{
+
+    "service_worker":"background.js",
+
+    "type":"module"
+
   },
 
-  "action": {
+  "action":{
+
     "default_popup":"popup.html",
+
     "default_title":"TabForge Runtime",
 
     "default_icon":{
+
       "16":"icons/icon16.png",
+
       "32":"icons/icon32.png",
+
       "48":"icons/icon48.png",
+
       "128":"icons/icon128.png"
+
     }
+
   },
 
   "content_scripts":[
+
     {
+
       "matches":[
+
         "<all_urls>"
+
       ],
 
       "js":[
+
         "content.js",
+
         "tabstream.js"
+
       ],
 
       "run_at":"document_idle"
+
     }
+
   ],
 
   "web_accessible_resources":[
+
     {
+
       "resources":[
+
         "capture.js",
+
         "tabstream.js"
+
       ],
 
       "matches":[
+
         "<all_urls>"
+
       ]
+
     }
+
   ],
 
   "commands":{
@@ -76,19 +128,25 @@
     "start_capture":{
 
       "suggested_key":{
+
         "default":"Ctrl+Shift+S"
+
       },
 
-      "description":"Start recording"
+      "description":"Start TabForge native recording"
+
     },
 
     "stop_capture":{
 
       "suggested_key":{
+
         "default":"Ctrl+Shift+X"
+
       },
 
-      "description":"Stop recording"
+      "description":"Stop TabForge native recording"
+
     }
 
   },

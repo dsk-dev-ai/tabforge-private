@@ -1,13 +1,13 @@
 // ====================================================
-// TabForge Background Runtime v3.0
-// Native Capture Controller
-// Phase A tabcapture-native
+// TabForge Background Runtime v4.0
+// Native tabCapture Controller
+// Phase B
 // ====================================================
 
 (()=>{
 
 console.log(
-"[TABFORGE BG] Boot"
+"[TABFORGE BG] Native Boot"
 );
 
 
@@ -24,12 +24,10 @@ active:new Map(),
 metrics:{
 
 starts:0,
-
 stops:0,
-
 injects:0,
-
-errors:0
+errors:0,
+nativeStreams:0
 
 }
 
@@ -44,7 +42,7 @@ globalThis.__TABFORGE_BG__;
 // HELPERS
 // =====================================
 
-function id(){
+function session(){
 
 return crypto.randomUUID();
 
@@ -77,7 +75,7 @@ return [
 
 .some(
 
-v=>url.startsWith(v)
+x=>url.startsWith(x)
 
 );
 
@@ -89,13 +87,17 @@ v=>url.startsWith(v)
 // INSTALL
 // =====================================
 
-chrome.runtime.onInstalled.addListener(()=>{
+chrome.runtime.onInstalled.addListener(
+
+()=>{
 
 console.log(
 "[INSTALLED]"
 );
 
-});
+}
+
+);
 
 
 
@@ -112,6 +114,7 @@ STATE.injected.has(tabId)
 return true;
 
 }
+
 
 try{
 
@@ -134,11 +137,6 @@ tabId
 
 STATE.metrics.injects++;
 
-
-console.log(
-`[INJECTED] ${tabId}`
-);
-
 return true;
 
 }
@@ -159,7 +157,7 @@ return false;
 
 
 // =====================================
-// AUTO
+// AUTO INJECT
 // =====================================
 
 chrome.tabs.onUpdated.addListener(
@@ -197,87 +195,6 @@ tabId
 
 
 // =====================================
-// CLEANUP
-// =====================================
-
-chrome.tabs.onRemoved.addListener(
-
-tabId=>{
-
-STATE.injected.delete(
-tabId
-);
-
-STATE.active.delete(
-tabId
-);
-
-console.log(
-`[REMOVED] ${tabId}`
-);
-
-}
-
-);
-
-
-
-// =====================================
-// HOTKEYS
-// =====================================
-
-chrome.commands.onCommand.addListener(
-
-async(command)=>{
-
-const [tab]=
-
-await chrome.tabs.query({
-
-active:true,
-
-currentWindow:true
-
-});
-
-
-if(!tab?.id){
-
-return;
-
-}
-
-
-if(
-
-command==="start_capture"
-
-){
-
-startCapture(
-tab.id
-);
-
-}
-
-
-if(
-
-command==="stop_capture"
-
-){
-
-stopCapture(
-tab.id
-);
-
-}
-
-});
-
-
-
-// =====================================
 // START
 // =====================================
 
@@ -290,6 +207,7 @@ STATE.active.has(tabId)
 ){
 
 return;
+
 }
 
 
@@ -307,7 +225,61 @@ return;
 
 
 const sessionId=
-id();
+session();
+
+
+// Native capture
+
+chrome.tabCapture.capture(
+
+{
+
+audio:true,
+
+video:true,
+
+videoConstraints:{
+
+mandatory:{
+
+maxWidth:1920,
+
+maxHeight:1080,
+
+maxFrameRate:60
+
+}
+
+}
+
+},
+
+async(stream)=>{
+
+
+if(
+
+chrome.runtime.lastError
+||
+
+!stream
+
+){
+
+STATE.metrics.errors++;
+
+console.error(
+
+chrome.runtime.lastError
+
+);
+
+return;
+
+}
+
+
+STATE.metrics.nativeStreams++;
 
 
 await chrome.scripting.executeScript({
@@ -320,9 +292,8 @@ func:(tabId)=>{
 
 globalThis
 .TabForgeCapture
-?.startTabCapture(
-tabId
-);
+?.attachNativeStream(
+tabId);
 
 },
 
@@ -341,6 +312,8 @@ tabId,
 
 sessionId,
 
+stream,
+
 started:
 Date.now()
 
@@ -354,7 +327,11 @@ STATE.metrics.starts++;
 
 console.log(
 
-`[STARTED] ${tabId}`
+`[NATIVE STARTED] ${tabId}`
+
+);
+
+}
 
 );
 
@@ -379,7 +356,31 @@ error
 
 async function stopCapture(tabId){
 
+const active=
+
+STATE.active.get(
+tabId
+);
+
+if(!active){
+
+return;
+
+}
+
+
 try{
+
+
+active.stream
+?.getTracks()
+
+.forEach(
+
+t=>t.stop()
+
+);
+
 
 await chrome.scripting.executeScript({
 
@@ -408,6 +409,7 @@ STATE.active.delete(
 tabId
 );
 
+
 STATE.metrics.stops++;
 
 
@@ -429,6 +431,81 @@ STATE.metrics.errors++;
 
 
 // =====================================
+// HOTKEY
+// =====================================
+
+chrome.commands.onCommand.addListener(
+
+async(command)=>{
+
+const [tab]=
+
+await chrome.tabs.query({
+
+active:true,
+
+currentWindow:true
+
+});
+
+
+if(
+!tab?.id
+){
+
+return;
+
+}
+
+
+if(
+command==="start_capture"
+){
+
+startCapture(
+tab.id
+);
+
+}
+
+
+if(
+command==="stop_capture"
+){
+
+stopCapture(
+tab.id
+);
+
+}
+
+});
+
+
+
+// =====================================
+// CLEANUP
+// =====================================
+
+chrome.tabs.onRemoved.addListener(
+
+tabId=>{
+
+stopCapture(
+tabId
+);
+
+STATE.injected.delete(
+tabId
+);
+
+}
+
+);
+
+
+
+// =====================================
 // ROUTER
 // =====================================
 
@@ -442,11 +519,8 @@ sendResponse
 
 try{
 
-
 if(
-
 message.action==="START_CAPTURE"
-
 ){
 
 await startCapture(
@@ -457,7 +531,6 @@ message.tabId
 
 );
 
-
 sendResponse({
 
 success:true
@@ -467,11 +540,8 @@ success:true
 }
 
 
-
 if(
-
 message.action==="STOP_CAPTURE"
-
 ){
 
 await stopCapture(
@@ -482,7 +552,6 @@ message.tabId
 
 );
 
-
 sendResponse({
 
 success:true
@@ -492,24 +561,15 @@ success:true
 }
 
 
-
 if(
-
 message.action==="RUNTIME_STATS"
-
 ){
 
 sendResponse({
 
 active:
 
-[
-
-...STATE
-.active
-.keys()
-
-],
+[...STATE.active.keys()],
 
 metrics:
 STATE.metrics
