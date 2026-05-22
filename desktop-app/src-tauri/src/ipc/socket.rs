@@ -16,9 +16,9 @@ use tokio_tungstenite::accept_async;
 use serde::Deserialize;
 
 use crate::encoder::ffmpeg::{
-    create_muxer,
-    stop_muxer,
-    write_chunk
+    start_session,
+    append_chunk,
+    close_session
 };
 
 use crate::workers::pool::{
@@ -32,16 +32,13 @@ use crate::workers::pool::{
 // ========================================
 
 type SessionStore=
-
 Arc<
 Mutex<
 HashMap<
 String,
 StreamSession
->
->
+>>
 >;
-
 
 
 // ========================================
@@ -65,9 +62,7 @@ pub struct StreamSession{
     pub active:bool,
 
     pub started:u64
-
 }
-
 
 
 // ========================================
@@ -84,7 +79,6 @@ Deserialize
 struct MetaPacket{
 
     #[serde(rename="type")]
-
     packet_type:String,
 
     session_id:String,
@@ -96,9 +90,7 @@ struct MetaPacket{
     time:u64,
 
     size:usize
-
 }
-
 
 
 #[derive(
@@ -111,7 +103,6 @@ Deserialize
 struct SessionEnd{
 
     session_id:String
-
 }
 
 
@@ -128,9 +119,9 @@ println!("========== IPC ==========");
 
 println!("[IPC] websocket enabled");
 
-println!("[IPC] native session runtime");
+println!("[IPC] native session ownership");
 
-println!("[IPC] browser ownership");
+println!("[IPC] transport runtime");
 
 println!("[IPC] worker routing");
 
@@ -139,7 +130,6 @@ println!("=========================");
 println!();
 
 }
-
 
 
 pub async fn listen_for_streams(){
@@ -192,7 +182,6 @@ println!(
 
 
 let sessions:
-
 SessionStore=
 
 Arc::new(
@@ -292,11 +281,8 @@ return;
 
 
 let(
-
-_write,
-
+_,
 mut read
-
 )=ws.split();
 
 
@@ -306,7 +292,6 @@ String::new();
 
 
 while let Some(msg)=
-
 read.next().await{
 
 match msg{
@@ -321,7 +306,6 @@ if !active_session.is_empty(){
 shutdown_session(
 
 &active_session,
-
 &sessions
 
 );
@@ -342,10 +326,6 @@ message.into_data();
 
 
 if active_session.is_empty(){
-
-println!(
-"[SKIP] binary before metadata"
-);
 
 continue;
 
@@ -414,7 +394,6 @@ if let Ok(p)=packet{
 shutdown_session(
 
 &p.session_id,
-
 &sessions
 
 );
@@ -442,14 +421,11 @@ serde_json
 );
 
 
-match meta{
-
-Ok(meta)=>{
+if let Ok(meta)=meta{
 
 active_session=
 
-meta
-.session_id
+meta.session_id
 .clone();
 
 
@@ -463,17 +439,6 @@ meta,
 
 }
 
-Err(error)=>{
-
-println!(
-"[META ERROR] {}",
-error
-);
-
-}
-
-}
-
 }
 
 }
@@ -484,19 +449,6 @@ println!(
 "[STREAM ERROR] {}",
 error
 );
-
-
-if !active_session.is_empty(){
-
-shutdown_session(
-
-&active_session,
-
-&sessions
-
-);
-
-}
 
 break;
 
@@ -545,7 +497,7 @@ assign_worker(
 );
 
 
-create_muxer(
+start_session(
 
 &meta.session_id,
 
@@ -570,7 +522,7 @@ session_id:
 meta.session_id.clone(),
 
 tab_id:
-meta.tab_id.clone(),
+meta.tab_id,
 
 worker,
 
@@ -598,13 +550,7 @@ UNIX_EPOCH
 
 
 println!(
-
-"[SESSION START] {} -> {}",
-
-meta.tab_id,
-
-meta.session_id
-
+"[SESSION START]"
 );
 
 }
@@ -645,7 +591,7 @@ session.total_bytes+=
 bytes.len();
 
 
-write_chunk(
+append_chunk(
 
 session_id,
 
@@ -727,7 +673,7 @@ session_id
 );
 
 
-stop_muxer(
+close_session(
 session_id
 );
 

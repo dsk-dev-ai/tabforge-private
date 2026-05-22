@@ -1,226 +1,598 @@
 use std::{
     collections::HashMap,
-    sync::{Mutex, OnceLock},
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{Mutex,OnceLock},
+    time::{SystemTime,UNIX_EPOCH}
 };
+
 
 // ====================================
 // WORKER
 // ====================================
 
-#[derive(Debug, Clone)]
+#[derive(
+Debug,
+Clone
+)]
 
-pub struct Worker {
-    pub id: u32,
+pub struct Worker{
 
-    pub active: bool,
+    pub id:u32,
 
-    pub busy: bool,
+    pub active:bool,
 
-    pub sessions: u64,
+    pub busy:bool,
 
-    pub current_tab: Option<String>,
+    pub sessions:u64,
 
-    pub started: u64,
+    pub current_session:Option<String>,
 
-    pub bytes_processed: u64,
+    pub started:u64,
+
+    pub bytes_processed:u64,
+
+    pub chunks_processed:u64
 }
 
+
+
 // ====================================
-// POOL
+// METRICS
 // ====================================
 
-static WORKERS: OnceLock<Mutex<HashMap<u32, Worker>>> = OnceLock::new();
+#[derive(
+Debug,
+Default
+)]
 
-fn pool() -> &'static Mutex<HashMap<u32, Worker>> {
-    WORKERS.get_or_init(|| Mutex::new(HashMap::new()))
+pub struct PoolMetrics{
+
+    pub assigned:u64,
+
+    pub released:u64,
+
+    pub bytes:u64,
+
+    pub chunks:u64
 }
+
+
+
+// ====================================
+// GLOBALS
+// ====================================
+
+static WORKERS:
+
+OnceLock<
+Mutex<
+HashMap<
+u32,
+Worker
+>>>
+
+=OnceLock::new();
+
+
+static METRICS:
+
+OnceLock<
+Mutex<
+PoolMetrics
+>>
+
+=OnceLock::new();
+
+
+
+fn pool()
+
+-> &'static Mutex<HashMap<u32,Worker>>{
+
+WORKERS.get_or_init(
+
+||Mutex::new(
+HashMap::new()
+)
+
+)
+
+}
+
+
+fn metrics()
+
+-> &'static Mutex<PoolMetrics>{
+
+METRICS.get_or_init(
+
+||Mutex::new(
+PoolMetrics::default()
+)
+
+)
+
+}
+
+
 
 // ====================================
 // TIME
 // ====================================
 
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+fn now()->u64{
+
+SystemTime::now()
+
+.duration_since(
+UNIX_EPOCH
+)
+
+.unwrap()
+
+.as_secs()
+
 }
+
+
 
 // ====================================
 // INIT
 // ====================================
 
-pub fn initialize_workers() {
-    let mut workers = match pool().lock() {
-        Ok(v) => v,
+pub fn initialize_workers(){
 
-        Err(_) => {
-            println!("[WORKER LOCK ERROR]");
+let mut workers=
 
-            return;
-        }
-    };
+match pool().lock(){
 
-    workers.clear();
+Ok(v)=>v,
 
-    for id in 1..=6 {
-        workers.insert(
-            id,
-            Worker {
-                id,
+Err(_)=>{
 
-                active: true,
+println!(
+"[WORKER LOCK]"
+);
 
-                busy: false,
+return;
 
-                sessions: 0,
-
-                current_tab: None,
-
-                started: now(),
-
-                bytes_processed: 0,
-            },
-        );
-    }
-
-    println!("[WORKERS] initialized");
-
-    println!("[WORKERS] {} online", workers.len());
 }
+
+};
+
+
+workers.clear();
+
+
+for id in 1..=6{
+
+workers.insert(
+
+id,
+
+Worker{
+
+id,
+
+active:true,
+
+busy:false,
+
+sessions:0,
+
+current_session:None,
+
+started:now(),
+
+bytes_processed:0,
+
+chunks_processed:0
+
+}
+
+);
+
+}
+
+
+metrics();
+
+
+println!(
+"[WORKERS INITIALIZED]"
+);
+
+println!(
+"[POOL SIZE] {}",
+workers.len()
+);
+
+}
+
+
 
 // ====================================
 // ASSIGN
-// least busy worker strategy
 // ====================================
 
-pub fn assign_worker(tab_id: &str) -> Option<u32> {
-    let mut workers = match pool().lock() {
-        Ok(v) => v,
+pub fn assign_worker(
 
-        Err(_) => {
-            println!("[LOCK ERROR]");
+session_id:&str
 
-            return None;
-        }
-    };
+)->Option<u32>{
 
-    let selected = workers
-        .values_mut()
-        .filter(|w| w.active && !w.busy)
-        .min_by_key(|w| w.sessions);
+let mut workers=
 
-    if let Some(worker) = selected {
-        worker.busy = true;
+match pool().lock(){
 
-        worker.sessions += 1;
+Ok(v)=>v,
 
-        worker.current_tab = Some(tab_id.to_string());
+Err(_)=>return None
 
-        println!("[ASSIGNED] worker={} tab={}", worker.id, tab_id);
+};
 
-        return Some(worker.id);
-    }
 
-    println!("[NO WORKER] {}", tab_id);
+let selected=
 
-    None
+workers
+
+.values_mut()
+
+.filter(
+
+|w|
+
+w.active
+&&
+!w.busy
+
+)
+
+.min_by_key(
+
+|w|
+
+w.sessions
+
+);
+
+
+if let Some(worker)=selected{
+
+worker.busy=true;
+
+worker.sessions+=1;
+
+worker.current_session=
+
+Some(
+
+session_id
+.to_string()
+
+);
+
+
+if let Ok(mut m)=
+
+metrics().lock(){
+
+m.assigned+=1;
+
 }
+
+
+println!(
+
+"[ASSIGN] worker={} session={}",
+
+worker.id,
+
+session_id
+
+);
+
+
+return Some(
+
+worker.id
+
+);
+
+}
+
+
+println!(
+"[NO WORKER]"
+);
+
+None
+
+}
+
+
 
 // ====================================
 // RELEASE
 // ====================================
 
-pub fn release_worker(tab_id: &str) {
-    let mut workers = match pool().lock() {
-        Ok(v) => v,
+pub fn release_worker(
 
-        Err(_) => return,
-    };
+session_id:&str
 
-    for worker in workers.values_mut() {
-        if worker.current_tab.as_deref() == Some(tab_id) {
-            worker.busy = false;
+){
 
-            worker.current_tab = None;
+let mut workers=
 
-            println!("[RELEASE] worker={} tab={}", worker.id, tab_id);
+match pool().lock(){
 
-            return;
-        }
-    }
+Ok(v)=>v,
+
+Err(_)=>return
+
+};
+
+
+for worker in
+
+workers.values_mut(){
+
+if
+
+worker
+
+.current_session
+
+.as_deref()
+
+==
+
+Some(
+session_id
+)
+
+{
+
+worker.busy=false;
+
+worker.current_session=None;
+
+
+if let Ok(mut m)=
+
+metrics().lock(){
+
+m.released+=1;
+
 }
+
+
+println!(
+
+"[RELEASE] {}",
+
+worker.id
+
+);
+
+return;
+
+}
+
+}
+
+}
+
+
 
 // ====================================
 // TRACK
 // ====================================
 
-pub fn add_bytes(worker_id: u32, bytes: u64) {
-    let mut workers = match pool().lock() {
-        Ok(v) => v,
+pub fn add_bytes(
 
-        Err(_) => return,
-    };
+worker_id:u32,
 
-    if let Some(worker) = workers.get_mut(&worker_id) {
-        worker.bytes_processed += bytes;
-    }
+bytes:u64
+
+){
+
+let mut workers=
+
+match pool().lock(){
+
+Ok(v)=>v,
+
+Err(_)=>return
+
+};
+
+
+if let Some(worker)=
+
+workers.get_mut(
+&worker_id
+){
+
+worker.bytes_processed+=bytes;
+
+worker.chunks_processed+=1;
+
+
+if let Ok(mut m)=
+
+metrics().lock(){
+
+m.bytes+=bytes;
+
+m.chunks+=1;
+
 }
+
+}
+
+}
+
+
 
 // ====================================
 // DEBUG
 // ====================================
 
-pub fn list_workers() {
-    let workers = match pool().lock() {
-        Ok(v) => v,
+pub fn list_workers(){
 
-        Err(_) => return,
-    };
+let workers=
 
-    println!();
+match pool().lock(){
 
-    for worker in workers.values() {
-        println!(
-            "[WORKER] id={} active={} busy={} sessions={} bytes={}KB",
-            worker.id,
-            worker.active,
-            worker.busy,
-            worker.sessions,
-            worker.bytes_processed / 1024
-        );
-    }
+Ok(v)=>v,
 
-    println!();
+Err(_)=>return
+
+};
+
+
+println!();
+
+
+for worker in
+
+workers.values(){
+
+println!(
+
+"[WORKER {}]",
+
+worker.id
+
+);
+
+println!(
+"busy {}",
+worker.busy
+);
+
+println!(
+"sessions {}",
+worker.sessions
+);
+
+println!(
+"bytes {}KB",
+
+worker.bytes_processed
+/1024
+);
+
+println!(
+"chunks {}",
+
+worker.chunks_processed
+);
+
+println!(
+"session {:?}",
+
+worker.current_session
+);
+
+println!(
+"------------"
+);
+
 }
+
+}
+
+
 
 // ====================================
 // STATS
 // ====================================
 
-pub fn worker_stats() {
-    let workers = match pool().lock() {
-        Ok(v) => v,
+pub fn worker_stats(){
 
-        Err(_) => return,
-    };
+let workers=
 
-    let total = workers.len();
+match pool().lock(){
 
-    let busy = workers.values().filter(|w| w.busy).count();
+Ok(v)=>v,
 
-    let idle = total - busy;
+Err(_)=>return
 
-    println!();
+};
 
-    println!("[POOL]");
 
-    println!("total={}", total);
+let total=
 
-    println!("busy={}", busy);
+workers.len();
 
-    println!("idle={}", idle);
 
-    println!();
+let busy=
+
+workers
+
+.values()
+
+.filter(
+|w|w.busy
+)
+
+.count();
+
+
+drop(workers);
+
+
+let m=
+
+metrics()
+
+.lock()
+
+.unwrap();
+
+
+println!();
+
+println!(
+"[POOL]"
+);
+
+println!(
+"total={}",
+total
+);
+
+println!(
+"busy={}",
+busy
+);
+
+println!(
+"idle={}",
+total-busy
+);
+
+println!(
+"assigned={}",
+m.assigned
+);
+
+println!(
+"released={}",
+m.released
+);
+
+println!(
+"bytes={}KB",
+m.bytes/1024
+);
+
+println!(
+"chunks={}",
+m.chunks
+);
+
+println!();
+
 }

@@ -14,265 +14,528 @@ use std::{
 #[derive(Debug, Default)]
 
 pub struct EncoderMetrics {
-    pub sessions_started: u64,
 
-    pub sessions_closed: u64,
+    pub sessions_started:u64,
 
-    pub total_chunks: u64,
+    pub sessions_closed:u64,
 
-    pub total_bytes: u64,
+    pub total_chunks:u64,
 
-    pub write_errors: u64,
+    pub total_bytes:u64,
+
+    pub write_errors:u64
 }
 
+
 // ==========================================
-// SESSION
+// SESSION OWNER
 // ==========================================
 
 #[derive(Debug)]
 
-pub struct FFmpegSession {
-    pub tab_id: String,
+pub struct SessionMuxer{
 
-    pub output: String,
+    pub id:String,
 
-    pub bytes_received: u64,
+    pub path:String,
 
-    pub chunks: u64,
+    pub chunks:u64,
 
-    pub active: bool,
+    pub bytes:usize,
 
-    pub started: u64,
+    pub active:bool,
 
-    pub file: Option<BufWriter<File>>,
+    pub started:u64,
+
+    pub file:Option<BufWriter<File>>
 }
+
 
 // ==========================================
-// GLOBAL STATE
+// GLOBAL STORE
 // ==========================================
 
-static SESSIONS: OnceLock<Mutex<HashMap<String, FFmpegSession>>> = OnceLock::new();
+static MUXERS:
+OnceLock<
+Mutex<
+HashMap<
+String,
+SessionMuxer
+>
+>
+>=OnceLock::new();
 
-static METRICS: OnceLock<Mutex<EncoderMetrics>> = OnceLock::new();
 
-fn store() -> &'static Mutex<HashMap<String, FFmpegSession>> {
-    SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+static METRICS:
+OnceLock<
+Mutex<
+EncoderMetrics
+>
+>=OnceLock::new();
+
+
+fn muxers()
+
+-> &'static Mutex<
+HashMap<
+String,
+SessionMuxer
+>
+>{
+
+MUXERS.get_or_init(
+
+|| Mutex::new(
+HashMap::new()
+)
+
+)
+
 }
 
-fn metrics() -> &'static Mutex<EncoderMetrics> {
-    METRICS.get_or_init(|| Mutex::new(EncoderMetrics::default()))
+
+fn metrics()
+
+-> &'static Mutex<
+EncoderMetrics
+>{
+
+METRICS.get_or_init(
+
+|| Mutex::new(
+EncoderMetrics::default()
+)
+
+)
+
 }
+
+
 
 // ==========================================
 // INIT
 // ==========================================
 
-pub fn initialize_ffmpeg() {
-    store();
+pub fn initialize_ffmpeg(){
 
-    metrics();
+muxers();
 
-    create_dir_all("recordings").ok();
+metrics();
 
-    println!("[ENCODER] Initialized");
+create_dir_all(
+"recordings"
+).ok();
 
-    println!("[ENCODER] Recording dir ready");
 
-    println!("[ENCODER] Multi-session enabled");
+println!(
+"[FFMPEG] initialized"
+);
 
-    println!("[ENCODER] Buffered writer enabled");
+println!(
+"[FFMPEG] session owner active"
+);
+
+println!(
+"[FFMPEG] mux runtime online"
+);
+
+println!(
+"[FFMPEG] recording dir ready"
+);
+
 }
 
+
+
 // ==========================================
-// CREATE
+// START
 // ==========================================
 
-pub fn create_muxer(tab_id: &str, output: &str) {
-    let mut sessions = match store().lock() {
-        Ok(v) => v,
+pub fn start_session(
 
-        Err(_) => {
-            println!("[MUX] Lock poisoned");
+session_id:&str,
 
-            return;
-        }
-    };
+output:&str
 
-    if sessions.contains_key(tab_id) {
-        return;
-    }
+){
 
-    if let Some(parent) = Path::new(output).parent() {
-        create_dir_all(parent).ok();
-    }
+let mut store=
 
-    let file = match File::create(output) {
-        Ok(file) => Some(BufWriter::new(file)),
+match muxers().lock(){
 
-        Err(error) => {
-            println!("[MUX ERROR] {}", error);
+Ok(v)=>v,
 
-            None
-        }
-    };
+Err(_)=>{
 
-    let started = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+println!(
+"[MUX LOCK]"
+);
 
-    sessions.insert(
-        tab_id.to_string(),
-        FFmpegSession {
-            tab_id: tab_id.to_string(),
+return;
 
-            output: output.to_string(),
-
-            bytes_received: 0,
-
-            chunks: 0,
-
-            active: true,
-
-            started,
-
-            file,
-        },
-    );
-
-    if let Ok(mut m) = metrics().lock() {
-        m.sessions_started += 1;
-    }
-
-    println!("[MUX CREATED] {}", tab_id);
-
-    println!("[OUTPUT] {}", output);
 }
 
-// ==========================================
-// WRITE
-// ==========================================
+};
 
-pub fn write_chunk(tab_id: &str, data: &[u8]) {
-    let mut sessions = match store().lock() {
-        Ok(v) => v,
 
-        Err(_) => {
-            println!("[WRITE] Lock poisoned");
+if store.contains_key(
+session_id
+){
 
-            return;
-        }
-    };
+return;
 
-    if let Some(session) = sessions.get_mut(tab_id) {
-        if !session.active {
-            return;
-        }
-
-        session.chunks += 1;
-
-        session.bytes_received += data.len() as u64;
-
-        if let Ok(mut m) = metrics().lock() {
-            m.total_chunks += 1;
-
-            m.total_bytes += data.len() as u64;
-        }
-
-        if let Some(file) = session.file.as_mut() {
-            if let Err(error) = file.write_all(data) {
-                println!("[WRITE ERROR] {}", error);
-
-                if let Ok(mut m) = metrics().lock() {
-                    m.write_errors += 1;
-                }
-            }
-        }
-
-        if session.chunks % 10 == 0 {
-            println!(
-                "[MUX] {} | chunks={} | {}KB",
-                tab_id,
-                session.chunks,
-                session.bytes_received / 1024
-            );
-        }
-    }
 }
 
-// ==========================================
-// STOP
-// ==========================================
 
-pub fn stop_muxer(tab_id: &str) {
-    let mut sessions = match store().lock() {
-        Ok(v) => v,
+if let Some(parent)=
 
-        Err(_) => {
-            println!("[STOP] Lock poisoned");
+Path::new(output)
+.parent()
 
-            return;
-        }
-    };
+{
 
-    if let Some(mut session) = sessions.remove(tab_id) {
-        session.active = false;
+create_dir_all(
+parent
+).ok();
 
-        if let Some(writer) = session.file.as_mut() {
-            let _ = writer.flush();
-        }
-
-        let duration = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            - session.started;
-
-        if let Ok(mut m) = metrics().lock() {
-            m.sessions_closed += 1;
-        }
-
-        println!("[MUX CLOSED] {}", tab_id);
-
-        println!("[DURATION] {}s", duration);
-
-        println!("[BYTES] {}KB", session.bytes_received / 1024);
-
-        println!("[CHUNKS] {}", session.chunks);
-    }
 }
+
+
+let file=
+
+match File::create(
+output
+){
+
+Ok(v)=>
+
+Some(
+BufWriter::new(v)
+),
+
+Err(error)=>{
+
+println!(
+"[FILE ERROR] {}",
+error
+);
+
+None
+
+}
+
+};
+
+
+store.insert(
+
+session_id.to_string(),
+
+SessionMuxer{
+
+id:
+session_id.to_string(),
+
+path:
+output.to_string(),
+
+chunks:0,
+
+bytes:0,
+
+active:true,
+
+started:
+
+SystemTime::now()
+
+.duration_since(
+UNIX_EPOCH
+)
+
+.unwrap()
+
+.as_secs(),
+
+file
+
+}
+
+);
+
+
+if let Ok(mut m)=
+metrics().lock(){
+
+m.sessions_started+=1;
+
+}
+
+
+println!(
+"[SESSION OWNER] {}",
+session_id
+);
+
+println!(
+"[OUTPUT] {}",
+output
+);
+
+}
+
+
+
+// ==========================================
+// APPEND
+// ==========================================
+
+pub fn append_chunk(
+
+session_id:&str,
+
+bytes:&[u8]
+
+){
+
+let mut store=
+
+match muxers().lock(){
+
+Ok(v)=>v,
+
+Err(_)=>return
+
+};
+
+
+if let Some(session)=
+
+store.get_mut(
+session_id
+){
+
+if !session.active{
+
+return;
+
+}
+
+
+session.chunks+=1;
+
+session.bytes+=
+bytes.len();
+
+
+if let Some(file)=
+session.file.as_mut(){
+
+if let Err(error)=
+
+file.write_all(
+bytes
+){
+
+println!(
+"[WRITE ERROR] {}",
+error
+);
+
+
+if let Ok(mut m)=
+metrics().lock(){
+
+m.write_errors+=1;
+
+}
+
+}
+
+}
+
+
+if let Ok(mut m)=
+metrics().lock(){
+
+m.total_chunks+=1;
+
+m.total_bytes+=
+
+bytes.len() as u64;
+
+}
+
+
+if session.chunks%10==0{
+
+println!(
+
+"[MUX {}] chunks={} bytes={}KB",
+
+session_id,
+
+session.chunks,
+
+session.bytes/1024
+
+);
+
+}
+
+}
+
+}
+
+
+
+// ==========================================
+// CLOSE
+// ==========================================
+
+pub fn close_session(
+
+session_id:&str
+
+){
+
+let mut store=
+
+match muxers().lock(){
+
+Ok(v)=>v,
+
+Err(_)=>return
+
+};
+
+
+if let Some(mut session)=
+
+store.remove(
+session_id
+){
+
+session.active=false;
+
+
+if let Some(writer)=
+session.file.as_mut(){
+
+let _=
+writer.flush();
+
+}
+
+
+let duration=
+
+SystemTime::now()
+
+.duration_since(
+UNIX_EPOCH
+)
+
+.unwrap()
+
+.as_secs()
+
+-
+
+session.started;
+
+
+if let Ok(mut m)=
+metrics().lock(){
+
+m.sessions_closed+=1;
+
+}
+
+
+println!(
+"[MUX CLOSED] {}",
+session_id
+);
+
+println!(
+"[DURATION] {}s",
+duration
+);
+
+println!(
+"[CHUNKS] {}",
+session.chunks
+);
+
+println!(
+"[BYTES] {}KB",
+session.bytes/1024
+);
+
+}
+
+}
+
+
 
 // ==========================================
 // DEBUG
 // ==========================================
 
-pub fn list_sessions() {
-    let sessions = match store().lock() {
-        Ok(v) => v,
+pub fn session_stats(){
 
-        Err(_) => return,
-    };
+let store=
 
-    for (id, session) in sessions.iter() {
-        println!(
-            "[SESSION] {} active={} chunks={} bytes={}",
-            id, session.active, session.chunks, session.bytes_received
-        );
-    }
+match muxers().lock(){
+
+Ok(v)=>v,
+
+Err(_)=>return
+
+};
+
+
+println!();
+
+println!(
+"========== MUX =========="
+);
+
+
+for(_,session)
+
+in store.iter(){
+
+println!(
+"session {}",
+session.id
+);
+
+println!(
+"chunks {}",
+session.chunks
+);
+
+println!(
+"bytes {}KB",
+session.bytes/1024
+);
+
+println!(
+"active {}",
+session.active
+);
+
+println!(
+"----------------"
+);
+
 }
 
-pub fn encoder_stats() {
-    if let Ok(m) = metrics().lock() {
-        println!("[ENCODER STATS]");
 
-        println!("started={}", m.sessions_started);
+println!(
+"========================="
+);
 
-        println!("closed={}", m.sessions_closed);
-
-        println!("chunks={}", m.total_chunks);
-
-        println!("bytes={}KB", m.total_bytes / 1024);
-
-        println!("errors={}", m.write_errors);
-    }
 }
