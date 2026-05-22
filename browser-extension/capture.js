@@ -1,7 +1,7 @@
 // =====================================================
-// TabForge Native Capture Runtime v2.0
-// chrome.tabCapture → MediaRecorder → WS → Rust
-// Phase A
+// TabForge Native Capture Runtime v3.0
+// Stream Attach → MediaRecorder → WS → Rust
+// Phase B
 // =====================================================
 
 (()=>{
@@ -11,7 +11,7 @@ try{
 if(globalThis.__TABFORGE_RUNTIME__){
 
 console.log(
-"[TABFORGE] Runtime already loaded"
+"[TABFORGE] Runtime loaded"
 );
 
 return;
@@ -68,7 +68,8 @@ return Date.now();
 
 }
 
-function id(){
+
+function sessionId(){
 
 return crypto.randomUUID();
 
@@ -80,13 +81,11 @@ return crypto.randomUUID();
 // SOCKET
 // ======================================
 
-async function socket(sessionId){
+async function createSocket(id){
 
 const existing=
 
-SOCKETS.get(
-sessionId
-);
+SOCKETS.get(id);
 
 if(
 
@@ -117,12 +116,8 @@ ws.binaryType=
 ws.onopen=()=>{
 
 SOCKETS.set(
-sessionId,
+id,
 ws
-);
-
-console.log(
-"[WS OPEN]"
 );
 
 resolve(
@@ -147,101 +142,53 @@ reject(e);
 ws.onclose=()=>{
 
 SOCKETS.delete(
-sessionId
-);
-
-console.log(
-"[WS CLOSED]"
+id
 );
 
 };
 
-}
-
-);
+});
 
 }
 
 
 
 // ======================================
-// START
+// ATTACH
 // ======================================
 
-async function startTabCapture(tabId){
+async function attachNativeStream(tabId){
 
 try{
 
 if(
-
 SESSIONS.has(tabId)
-
 ){
 
-console.warn(
-"[ACTIVE]"
-);
-
 return;
-
 }
 
 
-const sessionId=
-id();
+const media=
 
-console.log(
-"[START]"
-);
-
-
-const ws=
-
-await socket(
-sessionId
-);
-
-
-// native extension capture
-
-chrome.tabCapture.capture(
-
-{
+await navigator.mediaDevices
+.getUserMedia({
 
 audio:true,
 
 video:true
 
-},
+});
 
-stream=>{
 
-if(
+const id=
+sessionId();
 
-chrome.runtime.lastError
+const ws=
 
-){
-
-console.error(
-
-chrome.runtime.lastError
-
+await createSocket(
+id
 );
-
-return;
-
-}
-
-
-if(!stream){
-
-console.error(
-"[NO STREAM]"
-);
-
-return;
-
-}
 
 
 const mime=
@@ -269,14 +216,17 @@ const recorder=
 
 new MediaRecorder(
 
-stream,
+media,
 
 {
 
 mimeType:mime,
 
 videoBitsPerSecond:
-8000000
+8000000,
+
+audioBitsPerSecond:
+320000
 
 }
 
@@ -299,11 +249,8 @@ recorder.ondataavailable=
 async(e)=>{
 
 if(
-
 !e.data ||
-
 e.data.size===0
-
 ){
 
 return;
@@ -312,9 +259,7 @@ return;
 
 
 if(
-
 ws.readyState!==1
-
 ){
 
 return;
@@ -343,17 +288,15 @@ JSON.stringify({
 
 type:"meta",
 
-capture:
-"native",
+capture:"native",
 
-sessionId,
+sessionId:id,
 
 tabId,
 
 chunk,
 
-time:
-now(),
+time:now(),
 
 size:
 buffer.byteLength
@@ -381,10 +324,12 @@ console.log(
 };
 
 
-stream
+media
 .getTracks()
 
-.forEach(track=>{
+.forEach(
+
+track=>{
 
 track.addEventListener(
 
@@ -400,7 +345,9 @@ tabId
 
 );
 
-});
+}
+
+);
 
 
 SESSIONS.set(
@@ -409,13 +356,13 @@ tabId,
 
 {
 
-sessionId,
+stream:media,
 
-stream,
+socket:ws,
 
 recorder,
 
-socket:ws
+sessionId:id
 
 }
 
@@ -428,17 +375,14 @@ RECORD_INTERVAL
 
 
 console.log(
-"[LIVE]"
-
+`[LIVE ${tabId}]`
 );
-
-});
 
 }
 catch(error){
 
 console.error(
-"[START FAILED]",
+"[ATTACH ERROR]",
 error
 );
 
@@ -471,8 +415,8 @@ try{
 
 s.recorder?.stop();
 
-s.stream
 
+s.stream
 ?.getTracks()
 
 .forEach(
@@ -483,9 +427,7 @@ t=>t.stop()
 
 
 if(
-
 s.socket?.readyState===1
-
 ){
 
 s.socket.send(
@@ -512,16 +454,11 @@ tabId
 
 METRICS.stopped++;
 
-
-console.log(
-"[STOPPED]"
-);
-
 }
 catch(error){
 
 console.error(
-"[STOP ERROR]",
+"[STOP]",
 error
 );
 
@@ -546,15 +483,17 @@ METRICS
 
 globalThis.TabForgeCapture={
 
-startTabCapture,
+attachNativeStream,
+
 stopTabCapture,
+
 stats
 
 };
 
 
 console.log(
-"[TABFORGE API READY]"
+"[CAPTURE READY]"
 );
 
 }
