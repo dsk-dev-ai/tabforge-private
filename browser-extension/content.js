@@ -1,25 +1,28 @@
 // =====================================================
-// TabForge Content Bridge v2.0
-// Page ↔ Extension ↔ Native Runtime
-// Phase A tabcapture-native
+// TabForge Content Runtime v3
+// MV3 + Phase D Stable Runtime
 // =====================================================
 
 (() => {
 
-if(globalThis.__TABFORGE_CONTENT_LOADED__){
+// ======================================
+// DUPLICATE GUARD
+// ======================================
+
+if(window.__TABFORGE_CONTENT_LOADED__){
 
 console.log(
-"[TABFORGE] Content already loaded"
+"[TABFORGE] already loaded"
 );
 
 return;
 
 }
 
-globalThis.__TABFORGE_CONTENT_LOADED__=true;
+window.__TABFORGE_CONTENT_LOADED__=true;
 
 console.log(
-"[TABFORGE] Content bridge online"
+"[TABFORGE] content runtime online"
 );
 
 
@@ -27,7 +30,7 @@ console.log(
 // STATE
 // ======================================
 
-globalThis.__TABFORGE_CONTENT_STATE__ ??= {
+window.__TABFORGE_CONTENT_STATE__ ??= {
 
 capture:false,
 
@@ -35,17 +38,20 @@ sessionId:null,
 
 heartbeat:null,
 
+observer:null,
+
 lastURL:location.href,
 
 messageCount:0,
 
-errors:0
+errors:0,
+
+alive:true
 
 };
 
 const STATE=
-globalThis.__TABFORGE_CONTENT_STATE__;
-
+window.__TABFORGE_CONTENT_STATE__;
 
 
 // ======================================
@@ -55,6 +61,22 @@ globalThis.__TABFORGE_CONTENT_STATE__;
 function sid(){
 
 return crypto.randomUUID();
+
+}
+
+
+function extensionAlive(){
+
+try{
+
+return !!chrome?.runtime?.id;
+
+}
+catch{
+
+return false;
+
+}
 
 }
 
@@ -84,6 +106,9 @@ document.hasFocus(),
 timestamp:
 Date.now(),
 
+capture:
+STATE.capture,
+
 captureMode:
 "native"
 
@@ -92,14 +117,55 @@ captureMode:
 }
 
 
+
+// ======================================
+// SAFE SEND
+// ======================================
+
 function send(payload){
 
 try{
 
+if(
+!extensionAlive()
+){
+
+STATE.alive=false;
+
+return;
+
+}
+
+
 STATE.messageCount++;
 
+
 chrome.runtime.sendMessage(
-payload
+
+payload,
+
+(response)=>{
+
+if(
+chrome.runtime.lastError
+){
+
+STATE.errors++;
+
+console.warn(
+
+"[SEND ERROR]",
+
+chrome.runtime.lastError.message
+
+);
+
+return;
+
+}
+
+}
+
 );
 
 }
@@ -108,8 +174,11 @@ catch(error){
 STATE.errors++;
 
 console.warn(
+
 "[CONTENT SEND ERROR]",
+
 error
+
 );
 
 }
@@ -119,7 +188,7 @@ error
 
 
 // ======================================
-// INITIAL LOAD
+// PAGE READY
 // ======================================
 
 window.addEventListener(
@@ -149,17 +218,24 @@ console.log(
 
 
 
+
 // ======================================
-// SPA NAVIGATION
+// SPA WATCH
 // ======================================
 
-const observer=
+STATE.observer=
 
 new MutationObserver(()=>{
 
 if(
-location.href!==STATE.lastURL
+location.href===
+STATE.lastURL
 ){
+
+return;
+
+}
+
 
 STATE.lastURL=
 location.href;
@@ -172,6 +248,9 @@ action:
 
 url:
 location.href,
+
+title:
+document.title,
 
 time:
 Date.now()
@@ -187,14 +266,14 @@ location.href
 
 );
 
-}
-
 });
 
 
-observer.observe(
+if(document.body){
 
-document,
+STATE.observer.observe(
+
+document.body,
 
 {
 
@@ -206,6 +285,7 @@ childList:true
 
 );
 
+}
 
 
 
@@ -232,23 +312,13 @@ location.href
 
 });
 
+});
 
-console.log(
-
-"[VISIBILITY]",
-
-document.visibilityState
-
-);
-
-}
-
-);
 
 
 
 // ======================================
-// TAB EXIT
+// EXIT
 // ======================================
 
 window.addEventListener(
@@ -263,11 +333,26 @@ action:
 "TAB_UNLOAD",
 
 url:
-location.href
+location.href,
+
+sessionId:
+STATE.sessionId
 
 });
 
+
+if(
+STATE.heartbeat
+){
+
+clearInterval(
+STATE.heartbeat
+);
+
+}
+
 });
+
 
 
 
@@ -286,13 +371,14 @@ sendResponse
 try{
 
 
-// =============================
-// START SESSION
-// =============================
+// =====================
+// START
+// =====================
 
 if(
 
-message.action==="RUN_CAPTURE"
+message.action===
+"RUN_CAPTURE"
 
 ){
 
@@ -302,23 +388,26 @@ STATE.capture
 
 sendResponse({
 
-success:true
+success:true,
+
+active:true
 
 });
 
-return;
+return true;
 
 }
 
 
 STATE.capture=true;
 
-STATE.sessionId=sid();
+STATE.sessionId=
+sid();
 
 
 console.log(
 
-"[CAPTURE ACTIVE]",
+"[CAPTURE START]",
 
 STATE.sessionId
 
@@ -342,17 +431,20 @@ success:true
 
 });
 
+return true;
+
 }
 
 
 
-// =============================
+// =====================
 // STOP
-// =============================
+// =====================
 
 if(
 
-message.action==="STOP_CAPTURE"
+message.action===
+"STOP_CAPTURE"
 
 ){
 
@@ -370,12 +462,16 @@ STATE.sessionId
 });
 
 
-STATE.sessionId=null;
-
-
 console.log(
-"[CAPTURE STOP]"
+
+"[CAPTURE STOP]",
+
+STATE.sessionId
+
 );
+
+
+STATE.sessionId=null;
 
 
 sendResponse({
@@ -384,34 +480,46 @@ success:true
 
 });
 
+return true;
+
 }
 
 
 
-// =============================
+// =====================
 // HEALTH
-// =============================
+// =====================
 
 if(
 
-message.action==="PING"
+message.action===
+"PING"
 
 ){
 
 sendResponse({
 
-alive:true,
+alive:
+extensionAlive(),
 
 capture:
 STATE.capture,
+
+session:
+STATE.sessionId,
 
 messages:
 STATE.messageCount,
 
 errors:
-STATE.errors
+STATE.errors,
+
+url:
+location.href
 
 });
+
+return true;
 
 }
 
@@ -434,7 +542,7 @@ sendResponse({
 success:false,
 
 error:
-error.toString()
+String(error)
 
 });
 
@@ -448,6 +556,7 @@ return true;
 
 
 
+
 // ======================================
 // HEARTBEAT
 // ======================================
@@ -456,6 +565,19 @@ STATE.heartbeat=
 
 setInterval(()=>{
 
+if(
+!extensionAlive()
+){
+
+clearInterval(
+STATE.heartbeat
+);
+
+return;
+
+}
+
+
 send({
 
 action:
@@ -463,6 +585,9 @@ action:
 
 capture:
 STATE.capture,
+
+sessionId:
+STATE.sessionId,
 
 time:
 Date.now(),
@@ -481,7 +606,7 @@ location.href
 // DEBUG
 // ======================================
 
-globalThis.TabForgeContent={
+window.TabForgeContent={
 
 stats(){
 
@@ -490,11 +615,17 @@ console.table({
 capture:
 STATE.capture,
 
+session:
+STATE.sessionId,
+
 messages:
 STATE.messageCount,
 
 errors:
-STATE.errors
+STATE.errors,
+
+url:
+location.href
 
 });
 
