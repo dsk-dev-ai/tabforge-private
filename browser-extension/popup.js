@@ -1,13 +1,13 @@
 // ====================================================
-// TabForge Popup Runtime v4.0
-// Native Capture Dashboard
-// Phase A
+// TabForge Popup Runtime v6.0
+// Native Session Dashboard
+// Phase B2 Stable
 // ====================================================
 
 (()=>{
 
 console.log(
-"[TABFORGE POPUP] Boot"
+"[TABFORGE POPUP] PhaseB2 Stable Boot"
 );
 
 
@@ -19,9 +19,11 @@ globalThis.__TABFORGE_POPUP__ ??= {
 
 selected:new Set(),
 
-poller:null,
+tabs:[],
 
-tabs:[]
+runtime:null,
+
+poller:null
 
 };
 
@@ -37,20 +39,19 @@ globalThis.__TABFORGE_POPUP__;
 function blocked(url){
 
 if(!url){
+
 return true;
+
 }
 
 return [
 
 "chrome://",
-
 "edge://",
-
 "devtools://",
-
 "chrome-extension://",
-
-"about:"
+"about:",
+"view-source:"
 
 ]
 
@@ -63,14 +64,16 @@ v=>url.startsWith(v)
 }
 
 
-function button(text){
+function createButton(text){
 
 const b=
+
 document.createElement(
 "button"
 );
 
-b.innerText=text;
+b.innerText=
+text;
 
 return b;
 
@@ -133,33 +136,10 @@ error
 
 
 // =====================================
-// RENDER
-// =====================================
-
-function render(tabs){
-
-const container=
-
-document.getElementById(
-"tabs"
-);
-
-container.innerHTML="";
-
-
-tabs.forEach(
-createCard
-);
-
-}
-
-
-
-// =====================================
 // CARD
 // =====================================
 
-function createCard(tab){
+function card(tab){
 
 const root=
 
@@ -225,33 +205,57 @@ tab.title.slice(
 
 
 
-const native=
+const badge=
 
 document.createElement(
 "span"
 );
 
-native.innerText=
-"Native";
-
-native.style.marginLeft=
+badge.style.marginLeft=
 "auto";
 
-native.style.fontSize=
+badge.style.fontSize=
 "10px";
 
-native.style.opacity=
+
+if(
+STATE.selected.has(tab.id)
+){
+
+badge.innerText=
+"● LIVE";
+
+badge.style.color=
+"#4ade80";
+
+}
+else{
+
+badge.innerText=
+"NATIVE";
+
+badge.style.opacity=
 ".6";
 
+}
 
 
-top.appendChild(icon);
 
-top.appendChild(title);
+top.appendChild(
+icon
+);
 
-top.appendChild(native);
+top.appendChild(
+title
+);
+
+top.appendChild(
+badge
+);
 
 
+
+// URL
 
 const url=
 
@@ -267,6 +271,23 @@ tab.url;
 
 
 
+const sid=
+
+document.createElement(
+"div"
+);
+
+sid.className=
+"url";
+
+sid.innerText=
+
+`tab:${tab.id}`;
+
+
+
+// controls
+
 const controls=
 
 document.createElement(
@@ -277,18 +298,18 @@ controls.className=
 "controls";
 
 
-
 const start=
 
-button(
+createButton(
 "Start"
 );
 
 const stop=
 
-button(
+createButton(
 "Stop"
 );
+
 
 
 if(
@@ -297,27 +318,34 @@ STATE.selected.has(tab.id)
 
 start.disabled=true;
 
+stop.disabled=false;
+
 }
+else{
+
+start.disabled=false;
+
+stop.disabled=true;
+
+}
+
 
 
 start.onclick=
 
 ()=>startCapture(
-
 tab,
 start
-
 );
 
 
 stop.onclick=
 
 ()=>stopCapture(
-
 tab,
-start
-
+stop
 );
+
 
 
 controls.appendChild(
@@ -339,6 +367,10 @@ url
 );
 
 root.appendChild(
+sid
+);
+
+root.appendChild(
 controls
 );
 
@@ -347,8 +379,32 @@ document
 .getElementById(
 "tabs"
 )
+
 .appendChild(
 root
+);
+
+}
+
+
+
+// =====================================
+// RENDER
+// =====================================
+
+function render(tabs){
+
+const container=
+
+document.getElementById(
+"tabs"
+);
+
+container.innerHTML="";
+
+
+tabs.forEach(
+card
 );
 
 }
@@ -367,11 +423,7 @@ buttonEl
 ){
 
 if(
-
-STATE.selected.has(
-tab.id
-)
-
+STATE.selected.has(tab.id)
 ){
 
 return;
@@ -380,14 +432,6 @@ return;
 
 
 buttonEl.disabled=true;
-
-
-STATE.selected.add(
-tab.id
-);
-
-
-update();
 
 
 chrome.runtime.sendMessage(
@@ -404,22 +448,16 @@ tab.id
 
 response=>{
 
+
 if(
-
 !response?.success
-
 ){
 
-STATE.selected.delete(
-tab.id
-);
-
-buttonEl.disabled=false;
+buttonEl.disabled=
+false;
 
 showError(
-
 response?.error
-
 );
 
 return;
@@ -427,8 +465,24 @@ return;
 }
 
 
+STATE.selected.add(
+tab.id
+);
+
+
+update();
+
+render(
+STATE.tabs
+);
+
+
 console.log(
-response
+
+"[STARTED]",
+
+tab.id
+
 );
 
 }
@@ -450,17 +504,9 @@ buttonEl
 
 ){
 
-STATE.selected.delete(
-tab.id
-);
+chrome.runtime.sendMessage(
 
-buttonEl.disabled=false;
-
-
-update();
-
-
-chrome.runtime.sendMessage({
+{
 
 action:
 "STOP_CAPTURE",
@@ -468,26 +514,51 @@ action:
 tabId:
 tab.id
 
-});
+},
+
+response=>{
+
+
+if(
+!response?.success
+){
+
+showError(
+response?.error
+);
+
+return;
 
 }
 
 
+STATE.selected.delete(
+tab.id
+);
 
-// =====================================
-// STATUS
-// =====================================
 
-function update(){
+buttonEl.disabled=
+false;
 
-document
-.getElementById(
-"status"
-)
 
-.innerText=
+update();
 
-`Recording ${STATE.selected.size}`;
+render(
+STATE.tabs
+);
+
+
+console.log(
+
+"[STOPPED]",
+
+tab.id
+
+);
+
+}
+
+);
 
 }
 
@@ -511,7 +582,6 @@ e=>{
 const q=
 
 e.target.value
-
 .toLowerCase();
 
 
@@ -523,14 +593,12 @@ tab=>
 
 tab.title
 .toLowerCase()
-
 .includes(q)
 
 ||
 
 tab.url
 .toLowerCase()
-
 .includes(q)
 
 );
@@ -546,9 +614,27 @@ filtered
 
 
 
+// =====================================
+// UPDATE
+// =====================================
+
+function update(){
+
+document
+.getElementById(
+"status"
+)
+
+.innerText=
+
+`Recording ${STATE.selected.size}`;
+
+}
+
+
 
 // =====================================
-// RUNTIME
+// POLL
 // =====================================
 
 function poll(){
@@ -578,21 +664,64 @@ return;
 }
 
 
+STATE.runtime=
+response;
+
+
+STATE.selected=
+
+new Set(
+response.active || []
+);
+
+
+
 document
 .getElementById(
 "runtime"
 )
 
-.innerText=
+.innerHTML=
 
-`Sessions ${response.active?.length || 0}`;
+`
 
+Sessions ${
+response.active?.length || 0
+}
+
+<br>
+
+Starts ${
+response.metrics?.starts || 0
+}
+
+<br>
+
+Streams ${
+response.metrics?.nativeStreams || 0
+}
+
+<br>
+
+Errors ${
+response.metrics?.errors || 0
+}
+
+`;
+
+
+
+update();
+
+render(
+STATE.tabs
+);
 
 }
 
 );
 
-},3000);
+},2000);
 
 }
 
@@ -608,6 +737,7 @@ console.error(
 error
 );
 
+
 document
 .getElementById(
 "runtime"
@@ -615,14 +745,14 @@ document
 
 .innerText=
 
-`Runtime Error`;
+"Runtime Error";
 
 }
 
 
 
 // =====================================
-// EXIT
+// CLEANUP
 // =====================================
 
 window.addEventListener(
@@ -638,6 +768,7 @@ STATE.poller
 }
 
 );
+
 
 
 poll();
