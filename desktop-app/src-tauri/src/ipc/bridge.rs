@@ -102,3 +102,65 @@ pub fn receive_tabs(payload: TabPayload) -> Vec<RecordingSession> {
 
     sessions
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_filename_sanitizes_whitespace_and_separators() {
+        assert_eq!(
+            create_output_filename("My Great Tab"),
+            "my_great_tab_1080p.mp4"
+        );
+        assert_eq!(
+            create_output_filename("a/b\\c:d"),
+            "a_b_c_d_1080p.mp4"
+        );
+    }
+
+    #[test]
+    fn output_filename_lowercases_title() {
+        assert_eq!(
+            create_output_filename("CamelCase Title"),
+            "camelcase_title_1080p.mp4"
+        );
+    }
+
+    #[test]
+    fn create_browser_tab_defaults_resolution_and_fps() {
+        let tab = create_browser_tab(&TabData {
+            id: "tab-1".into(),
+            title: "Docs".into(),
+            url: "https://example.com".into(),
+        });
+        assert_eq!(tab.id, "tab-1");
+        assert_eq!(tab.width, 1920);
+        assert_eq!(tab.height, 1080);
+        assert_eq!(tab.fps, 60);
+    }
+
+    #[test]
+    fn receive_tabs_creates_one_session_per_selected_tab() {
+        let payload = TabPayload {
+            selected_tabs: vec![
+                TabData {
+                    id: "a".into(),
+                    title: "Alpha Page".into(),
+                    url: "https://a.test".into(),
+                },
+                TabData {
+                    id: "b".into(),
+                    title: "Beta Page".into(),
+                    url: "https://b.test".into(),
+                },
+            ],
+            timestamp: 1234,
+        };
+        let sessions = receive_tabs(payload);
+        assert_eq!(sessions.len(), 2);
+        assert_eq!(sessions[0].output_file, "alpha_page_1080p.mp4");
+        assert_eq!(sessions[1].output_file, "beta_page_1080p.mp4");
+        assert!(sessions[0].recording == false);
+    }
+}

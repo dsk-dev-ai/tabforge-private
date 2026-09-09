@@ -19,3 +19,15 @@ Browser Tab
 → Rust Workers
 → FFmpeg
 → Separate MP4 outputs
+
+## Testing & CI
+
+Unit tests cover the pure IPC/recording-session logic (tab → output filename
+sanitization, default resolution mapping, and payload-to-session expansion).
+
+```sh
+cd desktop-app/src-tauri
+cargo test
+```
+
+CI (`.github/workflows/ci.yml`) runs `cargo test` on every push to `main`.

@@ -13,8 +13,7 @@ initialize_stream;
 
 use crate::encoder::ffmpeg::{
     initialize_ffmpeg,
-    encoder_stats,
-    list_sessions
+    session_stats
 };
 
 use crate::encoder::hardware::
@@ -107,7 +106,7 @@ async fn encoder_monitor(){
 
 loop{
 
-encoder_stats();
+session_stats();
 
 sleep(
 
@@ -133,7 +132,7 @@ async fn session_monitor(){
 
 loop{
 
-list_sessions();
+session_stats();
 
 sleep(
 
