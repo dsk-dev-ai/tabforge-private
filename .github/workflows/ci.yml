@@ -15,7 +15,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Linux dependencies
         run: |
-          sudo apt-get update
+          sudo apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30 || true
+          # GitHub runners add a Google Chrome apt source that occasionally
+          # fails with a checksum mismatch; disable it if present so it cannot
+          # block the build.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+                      /etc/apt/sources.list.d/google.list
+          for i in 1 2 3; do
+            sudo apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30 && break
+          done
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
       - name: Run tests
         run: cargo test
